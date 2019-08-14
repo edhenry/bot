@@ -8,11 +8,11 @@ It is assumed that MAAS is already deployed, configured and physical nodes that 
 
 We will also assume that you've followed the instructions to point juju at the MAAS instance by adding a MAAS cloud to juju according to the instructions outlined [here](https://jaas.ai/docs/clouds)
 
-![images/add-model.png](Adding a model via juju client)
+![Adding a model via juju client](images/add-model.png)
 
 Once the model has been added, we can then check that the model has been added within the Juju GUI, which will have been configured when deploying juju on a server in the MAAS cloud that has been previously defined. This is out of scope of our documentation but is easily found online.
 
-![images/juju_gui.png](Model in Juju Web GUI)
+![Model in Juju Web GUI](images/juju_gui.png)
 
 Once our model has been created we can then manually add a few machines from our MAAS instance to the model that has been previously defined.
 
@@ -20,17 +20,17 @@ We can manually add machines via the juju client by issuing the `juju add-machin
 
 Once the machines have been added we can check the status of the nodes in multiple ways. The first is by querying the machine status via the juju client by issuing the `juju status` command. This will provide an output like the one shown below.
 
-![images/juju_status.png](Check status of the model via juju)
+![Check status of the model via Juju](images/juju_status.png)
 
 We can see that the nodes that we've added to this model are currently in the process of being provisioned. We can continue checking juju for the status of these nodes, but we can also check the MAAS interface for the status of the nodes, as well. Below is a screenshot as an example.
 
-![images/maas_node_status.png](Nodes being provisioned within MAAS)
+![Nodes being provisioned with MAAS](images/maas_node_status.png)
 
 We can see above that the nodes are currently in a deployed status within MAAS, as well, as they have been added to the model `botlab` being deployed by juju.
 
 To monitor the progress of the nodes being provisioned, we can issue the `watch --color juju status --color` command and this will watch the juju status command for changed as the nodes are deployed. An example of this is shown below.
 
-![images/watch_juju_status.png](Live updated status from juju client)
+![Live updated status from Juju Client](images/watch_juju_status.png)
 
 ## Juju Charms
 
@@ -44,11 +44,11 @@ In our example we want to utilize GPU's for training models that will be running
 
 There are may ways to add charms to an existing model within juju that has been deployed on the MAAS cloud. In this example we will use the juju GUI for a visual representation of what will be provisioned and installed wthin the juju model.
 
-![images/juju_charm_gui.png](Juju UI)
+![Juju GUI](images/juju_charm_gui.png)
 
 Clicking the green plus sign with the "Add a charm or bundle to get started" call out and that will take us to the charm store, shown below.
 
-![images/charm_store.png]
+![Charm Store](images/charm_store.png)
 
 We have many options for charms and bundles that we can deploy within out `juju model` that we've created. It's important to highlight that charms are a single instance of an application packages to run on the juju platform, while bundles are many charms that are bundled together to then run together.
 
@@ -64,7 +64,7 @@ juju deploy k8s-nvidia.yml --dry-run
 
 When we issue this command we will see juju provide a list of the actions that will be performed.
 
-![images/dry_run.png](Dry Run Output)
+![Dry Run Output](images/dry_run.png)
 
 We can see above that there are a few steps that are performed. All of the charms are resolved, and annotations are set with respect to each application/charm. Machines are then added. It is important to note here, as we are using MAAS as our underlying bare metal management system, that MAAS will be providing these machines via juju for this deployment.
 
@@ -186,7 +186,7 @@ watch --color juju status --color
 
 the `--color` flag will allow the native colored logging output of the juju client. A screenshot is shown below.
 
-![images/watch_color.png](Color Watch Command)
+![Watch command with color](images/watch_color.png)
 
 Now we wait until the deployment has finished. We can continue watching the status screen until everything has turned green and has a status of `active`. 
 
@@ -200,7 +200,7 @@ juju debug-log
 ```
 This will provide aggregated output from each individual agent running on all of the nodes. An example screenshot can be seen below.
 
-![images/debug-log.png](Debug Log)
+![Debug Log](images/debug-log.png)
 
 ### NVIDIA-DOCKER2
 
@@ -231,7 +231,7 @@ sudo systemctl status docker
 
 If the above commands were successful we should now see that the service is running, as shown below.
 
-![images/docker-daemon.png](Docker daemon service status)
+![Docker Daemon Service Status](images/docker-daemon.png)
 
 This should allow the node to finish being provisioned within juju. 
 
@@ -241,7 +241,7 @@ Note this will take a few minutes as changes propagate within the system.
 
 If we've remained patient enough during this whole process we should now have a functional Kubernetes cluster! We can see in the screenshot below that all systems are active!
 
-![images/all-systems-active.png](All systems go!)
+![All systems go!](images/all-systems-active.png)
 
 Once this process is complete, we can now download the `kubeconfig` file and append our [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/) file using juju, as well. This will give our kubectl utility access to this freshly deployed Kubernetes cluster.
 
@@ -259,7 +259,7 @@ kubectl get pods --all-namespaces
 
 A screenshot of the output of this command is below.
 
-![images/kubectl-get-pods-fresh-cluster.png](Fresh Kubernetes instance)
+![Fresh Kubernetes Instance](images/kubectl-get-pods-fresh-cluster.png)
 
 ## Kubeflow
 
@@ -344,7 +344,7 @@ kubectl get pods
 
 This will check the default namespace for running pods and output them. We can see below that our NFS provisioner pod is listed.
 
-![images/verify-nfs-provisioner.png]
+!(NFS Provisioner)(images/verify-nfs-provisioner.png)
 
 We can also verify that our default storage class has changed, as well, by issuing the `kubectl get sc` command. The output should look something like this.
 
@@ -367,7 +367,7 @@ kubectl apply -f https://raw.githubusercontent.com/google/metallb/v0.8.1/manifes
 
 Once we issue this command we can validate the deployment by checking the status of the pods in the newly created `metallb-system` namespace. An example of the deployment, it's output, and checking the status of the respective pods can be seen below 
 
-![images/metallb-deploy.png](MetalLB Deployment)
+![MetalLB Deployment](images/metallb-deploy.png)
 
 Once we have deployed the pods, we will then need to provide a configuration that defined the IP address range(s) available for provisioning by our MetalLB instance.
 
@@ -400,6 +400,6 @@ One can then verify this configuration using the `kubectl get configmap -n metal
 
 ### Kubeflow
 
-Now that we have our bare metal servers provisioned, kubernetes deployed, and our NFS share configured we can move on to [installing Kubeflow on an existing cluster](https://www.kubeflow.org/docs/started/k8s/kfctl-existing-arrikto/).
+Now that we have our bare metal servers provisioned, kubernetes deployed, our NFS share configured, and a load balancer deployed and configured, we can move on to [installing Kubeflow on an existing cluster](https://www.kubeflow.org/docs/started/k8s/kfctl-existing-arrikto/).
 
-This process is pretty straight forward and can be done in a few steps, but there is one last
+This process is straight forward and shouldn't provide many issues as long as everything above has been completed successfully.

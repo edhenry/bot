@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: carla-claim
+  annotations:
+    volume.beta.kubernetes.io/storage-class: nfs
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1000Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: carlasimulator
+  labels:
+    app: carla
+spec:
+  containers:
+    - name: carlasim
+      image: carlasim/carla:0.9.5
+      ports:
+        - containerPort: 2000
+        - containerPort: 2001
+        - containerPort: 2002
+      volumeMounts:
+      - mountPath: "/tmp/data"
+        name: carla-pvc
+      resources:
+        limits:
+          nvidia.com/gpu: 1
+  volumes:
+  - name: carla-pvc
+    persistentVolumeClaim:
+      claimName: carla-claim
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: carla
+  annotations:
+    metallb.universe.tf/address-pool: default
+spec:
+  ports:
+    - name: carla-port-1
+      port: 2000
+      targetPort: 2000
+    - name: carla-port-2
+      port: 2001
+      targetPort: 2001
+    - name: carla-port-3 
+      port: 2002
+      targetPort: 2002
+  selector:
+    app: carla
+  type: LoadBalancer
+      

@@ -1,0 +1,22 @@
+apiVersion: v1
+metadata:
+  name: pod-using-nfs
+spec:
+  # Add the server as an NFS volume for the pod
+  volumes:
+    - name: nfs-volume
+      nfs: 
+        # URL for the NFS server
+        server: 172.17.124.115 # Change this!
+        path: /nfsroot/lts_data
+
+  # In this container, we'll mount the NFS volume
+  # and write the date to a file inside it.
+  containers:
+    - name: app
+      image: alpine
+
+      # Mount the NFS volume in the container
+      volumeMounts:
+        - name: nfs-volume
+          mountPath: /var/nfs

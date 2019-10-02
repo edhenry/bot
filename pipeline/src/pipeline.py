@@ -13,3 +13,36 @@ def PreprocessOp(name, input_dir, output_dir):
         ],
         file_outputs={'output': '/output.txt'}
     )
+
+@dsl.pipeline(
+    name='bot_learn2steer_pipeline',
+    description='Demonstrate and end to end pipline for enabling an RC car to learn to steer'
+)
+
+def bot_training_pipeline(
+    raw_data_dir='/mnt/workspace/raw_data',
+    processed_data_dir='/mnt/workspace/processed_data',
+):
+
+    persistent_volume_name = 'bot-workspace'
+    persistent_volume_path = '/mnt/workspace'
+
+    op_dict = {}
+
+    op_dict['preprocess'] = PreprocessOp('preprocess', raw_data_dir, processed_data_dir)
+
+    for _, container_op in op_dict.items():
+        container_op.add_volume(k8s_client.V1Volume(
+            host_path=k8s_client.V1PersistentVolumeClaim(
+                path=persistent_volume_path),
+            name=persistent_volume_name
+        ))
+
+        container_op.add_volume_mount(k8s_client.V1VolumeMount(
+            mount_path=persistent_volume_path,
+            name=persistent_volume_name
+        ))
+
+if __name__ == '__main__':
+    import kfp.compiler as compiler
+    compiler.Compiler().compile(bot_training_pipeline, __file__ + '.tar.gz')

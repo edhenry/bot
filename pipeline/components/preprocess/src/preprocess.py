@@ -40,6 +40,7 @@ def main():
         Read all files in a directory and return a list containing all 
         of the filenames.
         """
+        print(os.listdir(directory))
         filenames = [f for f in listdir(directory) if isfile(join(directory, f))]
         return filenames
 

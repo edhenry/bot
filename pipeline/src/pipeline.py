@@ -6,7 +6,7 @@ from kubernetes import client as k8s_client
 def PreprocessOp(name, input_dir, output_dir):
     return dsl.ContainerOp(
         name=name,
-        image='nvcr.io/nvidia/tensorflow:19.08-py3',
+        image='edhenry/botcar-preprocess:latest',
         arguments=[
             '--input_dir', input_dir,
             '--output_dir', output_dir,
@@ -24,7 +24,7 @@ def bot_training_pipeline(
     processed_data_dir='/mnt/workspace/processed_data',
 ):
 
-    persistent_volume_name = 'bot-workspace'
+    persistent_volume_name = 'lts-bot-data-claim'
     persistent_volume_path = '/mnt/workspace'
 
     op_dict = {}
@@ -32,11 +32,7 @@ def bot_training_pipeline(
     op_dict['preprocess'] = PreprocessOp('preprocess', raw_data_dir, processed_data_dir)
 
     for _, container_op in op_dict.items():
-        container_op.add_volume(k8s_client.V1Volume(
-            host_path=k8s_client.V1PersistentVolumeClaim(
-                path=persistent_volume_path),
-            name=persistent_volume_name
-        ))
+        container_op.add_volume(k8s_client.V1Volume(persistent_volume_claim=k8s_client.V1PersistentVolumeClaimVolumeSource(claim_name=persistent_volume_name), name=persistent_volume_name)),
 
         container_op.add_volume_mount(k8s_client.V1VolumeMount(
             mount_path=persistent_volume_path,

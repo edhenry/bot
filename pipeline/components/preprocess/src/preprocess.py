@@ -40,7 +40,6 @@ def main():
         Read all files in a directory and return a list containing all 
         of the filenames.
         """
-        print(os.listdir(directory))
         filenames = [f for f in listdir(directory) if isfile(join(directory, f))]
         return filenames
 
@@ -84,27 +83,31 @@ def main():
         video_count = 0
 
         for dataset in datasets:
-            video_out = cv2.VideoWriter(f'{args.input_dir}/videos/segment-{video_count}.avi', cv2.VideoWriter_fourcc(*'DIVX'), 20, (224,224))
-            i = 0
-            for image_features in dataset:
-                raw_img = image_features['image'].numpy()
-                array_str = np.frombuffer(raw_img, np.uint8).reshape(224, 224, 3)
-                _, ret = cv2.imencode('.jpg', array_str)
+            try:
+                video_out = cv2.VideoWriter(f'{args.input_dir}/videos/segment-{video_count}.avi', cv2.VideoWriter_fourcc(*'DIVX'), 20, (224,224))
+                i = 0
+                for image_features in dataset:
+                    raw_img = image_features['image'].numpy()
+                    array_str = np.frombuffer(raw_img, np.uint8).reshape(224, 224, 3)
+                    _, ret = cv2.imencode('.jpg', array_str)
 
-                cv2.imwrite(img=array_str, filename=f'{args.input_dir}/videos/{i}.jpg')
-                text = f"Steering : {image_features['steering_theta']} \n Accelerator : {image_features['accelerator']}"
+                    cv2.imwrite(img=array_str, filename=f'{args.input_dir}/videos/{i}.jpg')
+                    text = f"Steering : {image_features['steering_theta']} \n Accelerator : {image_features['accelerator']}"
 
-                img = cv2.imread(filename=f'{args.input_dir}/videos/{i}.jpg')
-                y0, dy = 175, 20
-                for l, line in enumerate(text.split('\n')):
-                    y = y0 + l*dy
-                    cv2.putText(img, line, (0, y), font, fontScale, fontColor, lineType)
+                    img = cv2.imread(filename=f'{args.input_dir}/videos/{i}.jpg')
+                    y0, dy = 175, 20
+                    for l, line in enumerate(text.split('\n')):
+                        y = y0 + l*dy
+                        cv2.putText(img, line, (0, y), font, fontScale, fontColor, lineType)
 
-                video_out.write(img)
-                os.remove(f'{args.input_dir}/videos/{i}.jpg')
-                i += 1
-            video_out.release()
-            video_count += 1
+                    video_out.write(img)
+                    os.remove(f'{args.input_dir}/videos/{i}.jpg')
+                    i += 1
+                video_out.release()
+                video_count += 1
+            except:
+                print(f"Corrupt dataset encountered! Skipping...")
+
 
     records = read_records(args.input_dir)
     tfrecords = create_tf_datasets(records)

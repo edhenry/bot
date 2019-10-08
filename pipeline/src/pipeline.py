@@ -11,7 +11,7 @@ def PreprocessOp(name, input_dir, output_dir):
             '--input_dir', input_dir,
             '--output_dir', output_dir,
         ],
-        file_outputs={'output': '/output.txt'}
+        file_outputs={}
     )
 
 @dsl.pipeline(

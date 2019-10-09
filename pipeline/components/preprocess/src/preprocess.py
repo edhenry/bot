@@ -11,6 +11,8 @@ import tensorflow as tf
 from sklearn.utils import shuffle
 from tensorflow.python.lib.io import file_io
 
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
+
 tf.compat.v1.enable_eager_execution()
 
 def main():
@@ -23,16 +25,16 @@ def main():
     # Create a dictionary describing the features.
     # TODO : define in external protobuf defn
     image_feature_description = {
-        'timestamp': tf.FixedLenFeature([], tf.float32),
-        'image': tf.FixedLenFeature([], tf.string),
-        'steering_theta': tf.FixedLenFeature([], tf.float32),
-        'accelerator': tf.FixedLenFeature([], tf.float32),
-        'height': tf.FixedLenFeature([], tf.int64),
-        'width': tf.FixedLenFeature([], tf.int64),
-        'capture_height': tf.FixedLenFeature([], tf.int64),
-        'capture_width': tf.FixedLenFeature([], tf.int64),
-        'capture_fps': tf.FixedLenFeature([], tf.int64),
-        'num_channels': tf.FixedLenFeature([], tf.int64)
+        'timestamp': tf.io.FixedLenFeature([], tf.float32),
+        'image': tf.io.FixedLenFeature([], tf.string),
+        'steering_theta': tf.io.FixedLenFeature([], tf.float32),
+        'accelerator': tf.io.FixedLenFeature([], tf.float32),
+        'height': tf.io.FixedLenFeature([], tf.int64),
+        'width': tf.io.FixedLenFeature([], tf.int64),
+        'capture_height': tf.io.FixedLenFeature([], tf.int64),
+        'capture_width': tf.io.FixedLenFeature([], tf.int64),
+        'capture_fps': tf.io.FixedLenFeature([], tf.int64),
+        'num_channels': tf.io.FixedLenFeature([], tf.int64)
     }
 
     def read_records(directory: str) -> list:
@@ -51,14 +53,9 @@ def main():
 
         return raw_image_datasets
 
-    # raw_image_datasets = []
-
-    # for record in tfrecords:
-    #     raw_image_datasets.append(tf.data.TFRecordDataset(f'tfrecords/tfrecords/{record}'))
-
     def parse_image_function(example_proto):
     # Parse the input tf.Example proto using the dictionary above.
-        return tf.parse_single_example(example_proto, image_feature_description)
+        return tf.io.parse_single_example(example_proto, image_feature_description)
 
     def parse_datasets(datasets: list) -> list:
         parsed_datasets = []

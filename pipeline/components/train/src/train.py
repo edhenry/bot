@@ -124,15 +124,56 @@ def main():
         plt.xlabel('Batch Number')
         plt.ylabel('Batch Size')
         plt.show()
+    
+    def plot_values(ds: tf.data.Dataset, key: str, title: str):
+        """Plot steering values
+        
+        Arguments:
+            ds {tf.data.Dataset} -- Dataset containing the training data collected from our car
+            key {str} -- Feature contained within dataset that one would like to graph
+        """
+        value_dict = {}
+        i=0
+        for record in ds:
+            value_dict[i] = record[key].numpy()
+            i+=1
+        x, y = zip(*value_dict.items())
+        plt.figure(figsize=(10,7))
+        plt.bar(x, y)
+        plt.xlabel('Frame')
+        plt.ylabel(key)
+        plt.title(title)
+        plt.savefig(f'{title}_distribution.png')
 
     raw_dataset = load_data(args.input_dir)
+
+    plot_values(raw_dataset, 'accelerator', 'full_dataset_accelerator')
+    plot_values(raw_dataset, 'steering_theta', 'full_dataset_steering_theta')
+
+    # quick hack to get the length of the entire dataset for creating train / val / test splots
+    record_count = 0
+    for record in raw_dataset:
+        record_count += 1
+
+    TRAIN_SIZE = int(0.7 * record_count)
+    VALIDATION_SIZE = int(0.15 * record_count)
+    TEST_SIZE = int(0.15 * record_count)
+
+    
+    # Currently we shuffle, but may want to do planning in the future given
+    # the sequence of the images
+    full_dataset = raw_dataset.shuffle()
+    train_dataset = full_dataset.take(TRAIN_SIZE)
+    test_dataset = full_dataset.skip(TRAIN_SIZE)
+    validation_dataset = test_dataset.take(VALIDATION_SIZE)
+    test_dataset = test_dataset.take(TEST_SIZE)
+
+    plot_values(train_dataset, 'steering_theta', 'training_dataset_steering_theta')
+    plot_values(validation_dataset, 'steering_theta', 'test_dataset_steering_theta')
+    plot_values(test_dataset, 'steering_theta', 'training_dataset_steering_theta')
+    
+
     raw_dataset = raw_dataset.batch(int(args.batch_size), drop_remainder=True)
-
-    train_size = int(0.7 * DATASET_SIZE)
-
-
-    plot_batch_sizes(raw_dataset)
-
 
 if __name__ == "__main__":
     main()

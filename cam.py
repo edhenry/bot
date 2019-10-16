@@ -65,4 +65,6 @@ def cam(network, features, pil, classes, img):
     for i in range(0, 2):
         print(f"{proabilities[i]} -> {classes[idx[i].item()]}")
     
-    CAMs = 
+    CAMs = generate_cam(features[0], weight_softmax, [idx[0].item()])
+
+    

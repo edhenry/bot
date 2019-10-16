@@ -3,19 +3,22 @@ import argparse
 import os
 import shutil
 import sys
+import cv2
+from typing import Tuple
 
 import keras
 import numpy as np
 import tensorflow as tf
-from keras import backend as K
-from keras.callbacks import (LearningRateScheduler, ModelCheckpoint,
-                             ReduceLROnPlateau)
-from keras.layers import (Activation, AveragePooling2D, BatchNormalization,
-                          Conv2D, Dense, Flatten, Input)
-from keras.models import Model, load_model
-from keras.optimizers import Adam
-from keras.preprocessing.image import ImageDataGenerator
-from keras.regularizers import l2
+from tensorflow.keras import layers
+# from keras import backend as K
+# from keras.callbacks import (LearningRateScheduler, ModelCheckpoint,
+#                              ReduceLROnPlateau)
+# from keras.layers import (Activation, AveragePooling2D, BatchNormalization,
+#                           Conv2D, Dense, Flatten, Input)
+# from keras.models import Model, load_model
+# from keras.optimizers import Adam
+# from keras.preprocessing.image import ImageDataGenerator
+# from keras.regularizers import l2
 from tensorflow.python.saved_model import builder as saved_model_builder
 from tensorflow.python.saved_model import signature_constants, tag_constants
 from tensorflow.python.saved_model.signature_def_utils import \
@@ -76,7 +79,13 @@ def main():
         Arguments:
             example_proto {[type]} -- Example protocol buffer defn
         """
-        return tf.io.parse_single_example(example_proto, image_feature_description)
+        parsed_data = tf.io.parse_single_example(example_proto, image_feature_description)
+        # image = tf.io.decode_raw(parsed_data['image'], tf.int8)
+        image = tf.io.parse_tensor(parsed_data['image'], out_type=tf.int8)
+        image = tf.reshape(image, [224,224,3])
+        steering_theta = tf.cast(parsed_data['steering_theta'], tf.float32)
+        accelerator = tf.cast(parsed_data['accelerator'], tf.float32)
+        return image, steering_theta, accelerator
     
     def parse_dataset(dataset: tf.data.TFRecordDataset):
         """Parse entire TFRecord Dataset
@@ -135,7 +144,7 @@ def main():
         value_dict = {}
         i=0
         for record in ds:
-            value_dict[i] = record[key].numpy()
+            value_dict[i] = record[1].numpy()
             i+=1
         x, y = zip(*value_dict.items())
         plt.figure(figsize=(10,7))
@@ -146,9 +155,6 @@ def main():
         plt.savefig(f'{title}_distribution.png')
 
     raw_dataset = load_data(args.input_dir)
-
-    plot_values(raw_dataset, 'accelerator', 'full_dataset_accelerator')
-    plot_values(raw_dataset, 'steering_theta', 'full_dataset_steering_theta')
 
     # quick hack to get the length of the entire dataset for creating train / val / test splots
     record_count = 0
@@ -162,18 +168,62 @@ def main():
     
     # Currently we shuffle, but may want to do planning in the future given
     # the sequence of the images
-    full_dataset = raw_dataset.shuffle()
+    full_dataset = raw_dataset.shuffle(record_count)
     train_dataset = full_dataset.take(TRAIN_SIZE)
     test_dataset = full_dataset.skip(TRAIN_SIZE)
     validation_dataset = test_dataset.take(VALIDATION_SIZE)
     test_dataset = test_dataset.take(TEST_SIZE)
 
-    plot_values(train_dataset, 'steering_theta', 'training_dataset_steering_theta')
-    plot_values(validation_dataset, 'steering_theta', 'test_dataset_steering_theta')
-    plot_values(test_dataset, 'steering_theta', 'training_dataset_steering_theta')
-    
+    # plot_values(train_dataset, 'steering_theta', 'training_dataset_steering_theta')
+    # plot_values(validation_dataset, 'steering_theta', 'validation_dataset_steering_theta')
+    # plot_values(test_dataset, 'steering_theta', 'test_dataset_steering_theta')
 
-    raw_dataset = raw_dataset.batch(int(args.batch_size), drop_remainder=True)
+    train_batch = train_dataset.batch(int(args.batch_size), drop_remainder=True)
+
+    # # Model defn
+    # inputs = tf.keras.Input(shape=(150528,), name='image')
+    # #x = layers.Dense(4096, activation='relu')(inputs)
+    # x = layers.Dense(2048, activation='relu')(inputs)
+    # x = layers.Dense(1024, activation='relu')(x)
+    # x = layers.Dense(128, activation='relu')(x)
+    # x = layers.Dense(64, activation='relu')(x)
+    # outputs = layers.Dense(1, activation='tanh', name='outputs')(x)
+
+    inputs = tf.keras.Input(shape=(150528,), name='image')
+    x = tf.keras.layers.Conv2D(24, (5,5), name='conv1', strides=(2,2), padding='valid', activation='relu', kernel_initializer='he_normal')(inputs)
+    x = tf.keras.layers.Conv2D(36, (5,5), name='conv2', strides=(2,2), padding='valid', activation='relu', kernel_initializer='he_normal')(x)
+    x = tf.keras.layers.Conv2D(48, (5,5), name='conv3', strides=(2,2), padding='valid', activation='relu', kernel_initializer='he_normal')(x)
+
+    x = layers.Dropout(0.5)(x)
+
+    x = tf.keras.layers.Conv2D(64, (3,3), name='conv4', strides=(1,1), padding='valid', activation='relu', kernel_initializer='he_normal')(x)
+    x = tf.keras.layers.Conv2D(64, (3,3), name='conv5', strides=(1,1), padding='valid', activation='relu', kernel_initializer='he_normal')(x)
+
+    x = tf.keras.layers.Flatten(name='flatten')(x)
+
+    x = layers.Dense(100, name='fc1', activation='relu', kernel_initializer='he_normal')(x)
+    x = layers.Dense(50, name='fc2', activation='relu', kernel_initializer='he_normal')(x)
+    x = layers.Dense(10, name='fc3', activation='relu', kernel_initializer='he_normal')(x)
+    outputs = layers.Dense(1, name='output', activation='tanh', kernel_initializer='he_normal')(x)
+
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+    criterion = tf.losses.MeanSquaredError()
+    optimizer = tf.optimizers.Adam(learning_rate=1e-2, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
+
+    print(model.summary())
+
+    for epoch in range(int(args.epochs)):
+        for step, (x, y, z) in enumerate(train_batch):
+            with tf.GradientTape() as tape:
+                logits = model(x)
+                logits = tf.squeeze(logits, axis=1)
+                loss = criterion(y, logits)
+            
+            grads = tape.gradient(loss, model.trainable_weights)
+            optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+        print(epoch, 'loss:', loss.numpy())
 
 if __name__ == "__main__":
     main()

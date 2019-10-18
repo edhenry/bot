@@ -1,37 +1,24 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+
 import argparse
 import os
+import pathlib
 import shutil
 import sys
-import cv2
 from typing import Tuple
 
-import keras
-import numpy as np
-import tensorflow as tf
-from tensorflow.keras import layers
-# from keras import backend as K
-# from keras.callbacks import (LearningRateScheduler, ModelCheckpoint,
-#                              ReduceLROnPlateau)
-# from keras.layers import (Activation, AveragePooling2D, BatchNormalization,
-#                           Conv2D, Dense, Flatten, Input)
-# from keras.models import Model, load_model
-# from keras.optimizers import Adam
-# from keras.preprocessing.image import ImageDataGenerator
-# from keras.regularizers import l2
-from tensorflow.python.saved_model import builder as saved_model_builder
-from tensorflow.python.saved_model import signature_constants, tag_constants
-from tensorflow.python.saved_model.signature_def_utils import \
-    predict_signature_def
-
-import pathlib
+import cv2
 import matplotlib.pyplot as plt
-import pandas as pd
 import numpy as np
+import pandas as pd
+import tensorflow as tf
+from tensorflow.keras import Input
+from tensorflow.keras.layers import Conv2D, Dense, Dropout, Flatten
+from tensorflow.keras.models import Model
+from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
-
-np.set_printoptions(precision=4)
 
 def main():
     parser = argparse.ArgumentParser(description='Model Trainer')
@@ -43,6 +30,7 @@ def main():
     parser.add_argument('--data_augment', help="Enable or disable data augmentation (eg. True or False)")
     parser.add_argument('--subtract_pixel_mean', help="Enable or disable subtracting pixel mean from input images")
     parser.add_argument('--batch_size', help="Batch size for training data (eg. 128 (default))")
+    parser.add_argument('--learning_rate', help="Learning rate to use with optimizer (eg. 0.0001 or 1e-4)")
     args = parser.parse_args()
 
     print(f"Model Output Directory : {args.output_dir}/{args.model_name}")
@@ -67,11 +55,13 @@ def main():
     }
 
     if args.batch_size:
-        batch_size = args.batch_size
+        batch_size = int(args.batch_size)
     else:
         batch_size = 128
-    epochs = int(args.epochs)
+    EPOCHS = int(args.epochs)
+    LEARNING_RATE = float(args.learning_rate)
     data_augmentation = args.data_augment
+
 
     def parse_image_function(example_proto):
         """Parse TFRecords into images
@@ -80,9 +70,10 @@ def main():
             example_proto {[type]} -- Example protocol buffer defn
         """
         parsed_data = tf.io.parse_single_example(example_proto, image_feature_description)
-        # image = tf.io.decode_raw(parsed_data['image'], tf.int8)
-        image = tf.io.parse_tensor(parsed_data['image'], out_type=tf.int8)
+        image = tf.io.decode_raw(parsed_data['image'], tf.int8)
+        # image = tf.io.parse_tensor(parsed_data['image'], out_type=tf.int8)
         image = tf.reshape(image, [224,224,3])
+        image = tf.image.convert_image_dtype(image, tf.float32)
         steering_theta = tf.cast(parsed_data['steering_theta'], tf.float32)
         accelerator = tf.cast(parsed_data['accelerator'], tf.float32)
         return image, steering_theta, accelerator
@@ -161,6 +152,8 @@ def main():
     for record in raw_dataset:
         record_count += 1
 
+    print(f'Total Records contained within this directory : {record_count}')
+
     TRAIN_SIZE = int(0.7 * record_count)
     VALIDATION_SIZE = int(0.15 * record_count)
     TEST_SIZE = int(0.15 * record_count)
@@ -174,56 +167,126 @@ def main():
     validation_dataset = test_dataset.take(VALIDATION_SIZE)
     test_dataset = test_dataset.take(TEST_SIZE)
 
+    train_batch = train_dataset.batch(batch_size, drop_remainder=True)
+    test_batch = test_dataset.batch(batch_size, drop_remainder=True)
+    validation_batch = validation_dataset.batch(batch_size, drop_remainder=True)
+
     # plot_values(train_dataset, 'steering_theta', 'training_dataset_steering_theta')
     # plot_values(validation_dataset, 'steering_theta', 'validation_dataset_steering_theta')
     # plot_values(test_dataset, 'steering_theta', 'test_dataset_steering_theta')
 
-    train_batch = train_dataset.batch(int(args.batch_size), drop_remainder=True)
+    class BotModel(Model):
+        def __init__(self):
+            super(BotModel, self).__init__()
+            # self.input_layer = Input(shape=(224,224,3,), name='image')
+            self.conv1 = Conv2D(24, (5,5), name='conv1', strides=(2,2), padding='valid', activation='relu', kernel_initializer='he_normal')
+            self.conv2 = Conv2D(36, (5,5), name='conv2', strides=(2,2), padding='valid', activation='relu', kernel_initializer='he_normal')
+            self.conv3 = Conv2D(48, (5,5), name='conv3', strides=(2,2), padding='valid', activation='relu', kernel_initializer='he_normal')
 
-    # # Model defn
-    # inputs = tf.keras.Input(shape=(150528,), name='image')
-    # #x = layers.Dense(4096, activation='relu')(inputs)
-    # x = layers.Dense(2048, activation='relu')(inputs)
-    # x = layers.Dense(1024, activation='relu')(x)
-    # x = layers.Dense(128, activation='relu')(x)
-    # x = layers.Dense(64, activation='relu')(x)
-    # outputs = layers.Dense(1, activation='tanh', name='outputs')(x)
+            self.dropout_1 = Dropout(0.5)
 
-    inputs = tf.keras.Input(shape=(150528,), name='image')
-    x = tf.keras.layers.Conv2D(24, (5,5), name='conv1', strides=(2,2), padding='valid', activation='relu', kernel_initializer='he_normal')(inputs)
-    x = tf.keras.layers.Conv2D(36, (5,5), name='conv2', strides=(2,2), padding='valid', activation='relu', kernel_initializer='he_normal')(x)
-    x = tf.keras.layers.Conv2D(48, (5,5), name='conv3', strides=(2,2), padding='valid', activation='relu', kernel_initializer='he_normal')(x)
+            self.conv4 = Conv2D(64, (3,3), name='conv4', strides=(1,1), padding='valid', activation='relu', kernel_initializer='he_normal')
+            self.conv5 = Conv2D(64, (3,3), name='conv5', strides=(1,1), padding='valid', activation='relu', kernel_initializer='he_normal')
 
-    x = layers.Dropout(0.5)(x)
+            self.flatten = Flatten(name='flatten')
 
-    x = tf.keras.layers.Conv2D(64, (3,3), name='conv4', strides=(1,1), padding='valid', activation='relu', kernel_initializer='he_normal')(x)
-    x = tf.keras.layers.Conv2D(64, (3,3), name='conv5', strides=(1,1), padding='valid', activation='relu', kernel_initializer='he_normal')(x)
+            self.fc1 = Dense(100, name='fc1', activation='relu', kernel_initializer='he_normal')
+            self.fc2 = Dense(50, name='fc2', activation='relu', kernel_initializer='he_normal')
+            self.fc3 = Dense(10, name='fc3', activation='relu', kernel_initializer='he_normal')
+            self.output_val = Dense(1, name='output', activation='tanh', kernel_initializer='he_normal')
 
-    x = tf.keras.layers.Flatten(name='flatten')(x)
+        def call(self, x):
+            # x = self.input_layer(x)
+            x = self.conv1(x)
+            x = self.conv2(x)
+            x = self.conv3(x)
 
-    x = layers.Dense(100, name='fc1', activation='relu', kernel_initializer='he_normal')(x)
-    x = layers.Dense(50, name='fc2', activation='relu', kernel_initializer='he_normal')(x)
-    x = layers.Dense(10, name='fc3', activation='relu', kernel_initializer='he_normal')(x)
-    outputs = layers.Dense(1, name='output', activation='tanh', kernel_initializer='he_normal')(x)
+            x = self.dropout_1(x)
+            x = self.conv4(x)
+            x = self.conv5(x)
 
-    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+            x = self.flatten(x)
 
-    criterion = tf.losses.MeanSquaredError()
-    optimizer = tf.optimizers.Adam(learning_rate=1e-2, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
+            x = self.fc1(x)
+            x = self.fc2(x)
+            x = self.fc3(x)
+            x = self.output_val(x)
+            return x
 
-    print(model.summary())
+    loss_object = tf.losses.MeanSquaredError()
+    optimizer = tf.optimizers.Adam(learning_rate=LEARNING_RATE, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
 
-    for epoch in range(int(args.epochs)):
-        for step, (x, y, z) in enumerate(train_batch):
-            with tf.GradientTape() as tape:
-                logits = model(x)
-                logits = tf.squeeze(logits, axis=1)
-                loss = criterion(y, logits)
-            
-            grads = tape.gradient(loss, model.trainable_weights)
-            optimizer.apply_gradients(zip(grads, model.trainable_weights))
+    train_loss = tf.keras.metrics.Mean(name='train_loss')
+    validation_loss = tf.keras.metrics.Mean(name='validation_loss')
+    test_loss = tf.keras.metrics.Mean(name='test_loss')
 
-        print(epoch, 'loss:', loss.numpy())
+    checkpoint_filepath = os.path.join(model_directory, 'fresh_models', '{0}_model.{1}-{2}.h5'.format('model', '{epoch:02d}', '{val_loss:.7f}'))
+    checkpoint_callback = ModelCheckpoint(model_directory, save_best_only=True, verbose=1)
+
+    model = BotModel()
+
+    @tf.function
+    def train_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
+        """Training step for our model
+        
+        Arguments:
+            images {[type]} -- [description]
+            labels {[type]} -- [description]
+        """
+        with tf.GradientTape() as tape:
+            predictions = model(images)
+            loss = loss_object(labels, predictions)
+        
+        gradients = tape.gradient(loss, model.trainable_variables)
+        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+
+        train_loss(loss)
+    
+    @tf.function
+    def validation_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
+        """Validation step for our model
+        
+        Arguments:
+            images {[type]} -- [description]
+            labels {[type]} -- [description]
+        """
+        predictions = model(images)
+        v_loss = loss_object(labels, predictions)
+
+        validation_loss(v_loss)
+
+    @tf.function
+    def test_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
+        """Test step
+        
+        Arguments:
+            images {[type]} -- [description]
+            labels {[type]} -- [description]
+        """
+        predictions = model(images)
+        t_loss = loss_object(predictions, labels)
+
+        test_loss(t_loss)
+
+    for epoch in range(EPOCHS):
+        print(f'Starting epoch number {(epoch + 1)}...')
+        for step, (images, labels, _) in enumerate(train_batch):
+            train_step(images, labels)
+        
+        for step, (images, labels, _) in enumerate(validation_batch):
+            validation_step(images, labels)
+        
+        print(f"Epoch : {epoch+1}, Training Loss : {train_loss.result()}, Validation Loss : {validation_loss.result()}")
+        print(f"Number of examples seen so far : {((step+1) * batch_size)}")
+
+        if epoch % 10 == 0:
+            for test_images, test_labels, _ in test_batch:
+                test_step(test_images, test_labels)
+            print(f"Epoch : {epoch+1}, Training Loss : {train_loss.result()}, Test Loss : {test_loss.result()}")
+        
+        train_loss.reset_states()
+        validation_loss.reset_states()
+        test_loss.reset_states()
 
 if __name__ == "__main__":
     main()

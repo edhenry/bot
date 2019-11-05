@@ -2,6 +2,7 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 import argparse
+import datetime
 import os
 import pathlib
 import shutil
@@ -13,10 +14,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from tensorflow.keras import Input
+from tensorflow.keras import Input, callbacks
+from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 from tensorflow.keras.layers import Conv2D, Dense, Dropout, Flatten
 from tensorflow.keras.models import Model
-from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
@@ -151,6 +152,7 @@ def main():
 
     # quick hack to get the length of the entire dataset for creating train / val / test splots
     record_count = 0
+
     for record in raw_dataset:
         record_count += 1
 
@@ -268,28 +270,50 @@ def main():
         test_loss(t_loss)
 
     checkpoint_dir = os.path.join(model_directory, str(MODEL_VERSION), "ckpt")
+    tensorboard_dir = os.path.join(model_directory, str(MODEL_VERSION), "logs")
     if os.path.isdir(checkpoint_dir):
         shutil.rmtree(checkpoint_dir)
+        shutil.rmtree(tensorboard_dir)
     os.mkdir(checkpoint_dir)
+    os.mkdir(tensorboard_dir)
 
 
     checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
     checkpoint_path = checkpoint_dir + '/'
     checkpoint_manager = tf.train.CheckpointManager(checkpoint, directory=checkpoint_path, max_to_keep=5)
 
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    # TODO clean up directory creation logic
+    # have one root variable dir = model_directory + str(MODEL_VERSION) + 'logs/gradient_tape'
+    train_log_dir = 'logs/gradient_tape/' + current_time + '/train'
+    test_log_dir = 'logs/gradient_tape/' + current_time + '/test'
+    validation_log_dir = 'logs/gradient_tape/' + current_time + '/validation'
+    os.makedirs(train_log_dir)
+    os.makedirs(validation_log_dir)
+    os.makedirs(test_log_dir)
+    train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+    validation_summary_writer = tf.summary.create_file_writer(validation_log_dir)
+    test_summary_writer = tf.summary.create_file_writer(test_log_dir)
+
     for epoch in range(EPOCHS):
         print(f'Starting epoch number {(epoch + 1)}...')
         for step, (images, labels, _) in enumerate(train_batch):
             train_step(images, labels)
+        with train_summary_writer.as_default():
+            tf.summary.scalar('train_loss', train_loss.result(), step=epoch)    
         
         for step, (images, labels, _) in enumerate(validation_batch):
             validation_step(images, labels)
+        with validation_summary_writer.as_default():
+            tf.summary.scalar('validation_loss', validation_loss.result(), step=epoch)
         
         print(f"Epoch : {epoch+1}, Training Loss : {train_loss.result()}, Validation Loss : {validation_loss.result()}")
 
         if epoch % 1 == 0:
             for test_images, test_labels, _ in test_batch:
                 test_step(test_images, test_labels)
+            with test_summary_writer.as_default():
+                tf.summary.scalar('test_loss', test_loss.result(), step=epoch)
             print(f"Epoch : {epoch+1}, Training Loss : {train_loss.result()}, Test Loss : {test_loss.result()}")
             checkpoint_manager.save(checkpoint_number=None)
             
@@ -297,6 +321,9 @@ def main():
         train_loss.reset_states()
         validation_loss.reset_states()
         test_loss.reset_states()
+    
+    with open('/output.txt', 'w') as f:
+        f.write(args.output_dir)
 
 if __name__ == "__main__":
     main()

@@ -46,7 +46,8 @@ def TrainingOp(name: str, input_dir: str, output_dir: str,
             '--resume_training', resume_training
         ],
         file_outputs={}
-    )
+    ).set_gpu_limit(1)
+
 @dsl.pipeline(
     name='bot_learn2steer_pipeline',
     description='Demonstrate and end to end pipline for enabling an RC car to learn to steer'

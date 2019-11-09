@@ -3,6 +3,7 @@ from __future__ import (absolute_import, division, print_function,
 
 import argparse
 import datetime
+import json
 import os
 import pathlib
 import shutil
@@ -19,7 +20,7 @@ from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 from tensorflow.keras.layers import Conv2D, Dense, Dropout, Flatten
 from tensorflow.keras.models import Model
 
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+#os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 def main():
     parser = argparse.ArgumentParser(description='Model Trainer')
@@ -35,13 +36,18 @@ def main():
     parser.add_argument('--resume_training', help="Resume training of a model version that already exists (eg. True or False)")
     args = parser.parse_args()
 
-    print(f"Model Output Directory : {args.output_dir}/{args.model_name}")
+    if args.batch_size:
+        BATCH_SIZE = int(args.batch_size)
+    else:
+        BATCH_SIZE = 128
+    EPOCHS = int(args.epochs)
+    LEARNING_RATE = float(args.learning_rate)
+    DATA_AUGMENTATION = args.data_augment
+    MODEL_VERSION = int(args.model_version)
+    MODEL_NAME = args.model_name
 
-    model_directory = os.path.join(args.output_dir, args.model_name)
-    if os.path.isdir(model_directory):
-        shutil.rmtree(model_directory)
-    os.mkdir(model_directory)
-    os.mkdir(os.path.join(model_directory, args.model_version))
+    print(f"Model Output Directory : {args.output_dir}/{MODEL_NAME}")
+    print(f"Current Model Version : {MODEL_VERSION}")
 
     image_feature_description = {
         'timestamp': tf.io.FixedLenFeature([], tf.float32),
@@ -55,16 +61,6 @@ def main():
         'capture_fps': tf.io.FixedLenFeature([], tf.int64),
         'num_channels': tf.io.FixedLenFeature([], tf.int64)
     }
-
-    if args.batch_size:
-        BATCH_SIZE = int(args.batch_size)
-    else:
-        BATCH_SIZE = 128
-    EPOCHS = int(args.epochs)
-    LEARNING_RATE = float(args.learning_rate)
-    DATA_AUGMENTATION = args.data_augment
-    MODEL_VERSION = int(args.model_version)
-    MODEL_NAME = args.model_name
 
     def parse_image_function(example_proto):
         """Parse TFRecords into images
@@ -224,6 +220,8 @@ def main():
     validation_loss = tf.keras.metrics.Mean(name='validation_loss')
     test_loss = tf.keras.metrics.Mean(name='test_loss')
 
+    print(f"Test loss: {test_loss}")
+
     model = BotModel()
 
     @tf.function
@@ -269,14 +267,26 @@ def main():
 
         test_loss(t_loss)
 
+    # Make model directory structure on filesystem
+    # TODO : Break this functionality out into a utils module
+    model_directory = os.path.join(args.output_dir, args.model_name)
+    if os.path.isdir(model_directory):
+        pass
+    else:
+        os.mkdir(model_directory)
+        
+    if os.path.isdir(os.path.join(model_directory, str(MODEL_VERSION))):
+        pass
+    else:
+        os.mkdir(os.path.join(model_directory, str(MODEL_VERSION)))
+
     checkpoint_dir = os.path.join(model_directory, str(MODEL_VERSION), "ckpt")
     tensorboard_dir = os.path.join(model_directory, str(MODEL_VERSION), "logs")
     if os.path.isdir(checkpoint_dir):
         shutil.rmtree(checkpoint_dir)
         shutil.rmtree(tensorboard_dir)
     os.mkdir(checkpoint_dir)
-    os.mkdir(tensorboard_dir)
-
+    os.mkdir(tensorboard_dir)   
 
     checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
     checkpoint_path = checkpoint_dir + '/'
@@ -285,12 +295,16 @@ def main():
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     # TODO clean up directory creation logic
     # have one root variable dir = model_directory + str(MODEL_VERSION) + 'logs/gradient_tape'
-    train_log_dir = 'logs/gradient_tape/' + current_time + '/train'
-    test_log_dir = 'logs/gradient_tape/' + current_time + '/test'
+    train_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/train'
+    test_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/test'
+    print(f"Training Log Directory : {train_log_dir}")
+    print(f"Test Log Directory : {test_log_dir}")
     validation_log_dir = 'logs/gradient_tape/' + current_time + '/validation'
     os.makedirs(train_log_dir)
     os.makedirs(validation_log_dir)
     os.makedirs(test_log_dir)
+
+
     train_summary_writer = tf.summary.create_file_writer(train_log_dir)
     validation_summary_writer = tf.summary.create_file_writer(validation_log_dir)
     test_summary_writer = tf.summary.create_file_writer(test_log_dir)
@@ -315,12 +329,23 @@ def main():
             with test_summary_writer.as_default():
                 tf.summary.scalar('test_loss', test_loss.result(), step=epoch)
             print(f"Epoch : {epoch+1}, Training Loss : {train_loss.result()}, Test Loss : {test_loss.result()}")
-            checkpoint_manager.save(checkpoint_number=None)
-            
+            checkpoint_manager.save(checkpoint_number=None)       
         
         train_loss.reset_states()
         validation_loss.reset_states()
         test_loss.reset_states()
+    
+    model.save((model_directory + "/" + MODEL_NAME + "-" + str(MODEL_VERSION) + "-" + str(EPOCHS)))
+
+    tensorboard_metadata = {
+      'outputs' : [{
+        'type': 'tensorboard',
+        'source': f"'{(tensorboard_dir + '/gradient_tape')}'",
+      }]
+    }
+
+    with open('/mlpipeline-ui-metadata.json', 'w') as f:
+        json.dump(tensorboard_metadata, f)    
     
     with open('/output.txt', 'w') as f:
         f.write(args.output_dir)

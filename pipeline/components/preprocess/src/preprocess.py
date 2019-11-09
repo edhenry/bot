@@ -11,7 +11,7 @@ import tensorflow as tf
 from sklearn.utils import shuffle
 from tensorflow.python.lib.io import file_io
 
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+#os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 tf.compat.v1.enable_eager_execution()
 

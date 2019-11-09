@@ -18,7 +18,8 @@ def PreprocessOp(name, input_dir, output_dir):
 
 def TrainingOp(name: str, input_dir: str, output_dir: str,
                epochs: int, model_name: str, model_version: int, 
-               batch_size: int, learning_rate: float, resume_training: bool):
+               batch_size: int, learning_rate: float, resume_training: bool,
+               par_reads: int):
     """Start training process as outlined in pipeline
     
     Arguments:
@@ -34,7 +35,7 @@ def TrainingOp(name: str, input_dir: str, output_dir: str,
     """
     return dsl.ContainerOp(
         name=name,
-        image='edhenry/botcar-train:latest',
+        image='edhenry/botcar-train:pr0',
         arguments=[
             '--input_dir', input_dir,
             '--output_dir', output_dir,
@@ -43,7 +44,8 @@ def TrainingOp(name: str, input_dir: str, output_dir: str,
             '--model_version', model_version,
             '--batch_size', batch_size,
             '--learning_rate', learning_rate,
-            '--resume_training', resume_training
+            '--resume_training', resume_training,
+            '--par_reads', par_reads
         ],
         file_outputs={}
     ).set_gpu_limit(1)
@@ -62,7 +64,8 @@ def bot_training_pipeline(
     model_version=1,
     batch_size=64,
     learning_rate=0.0001,
-    resume_training=False
+    resume_training=False,
+    par_reads=4
 ):
 
     persistent_volume_name = 'lts-bot-data-claim'
@@ -73,7 +76,8 @@ def bot_training_pipeline(
     op_dict['preprocess'] = PreprocessOp('preprocess', raw_data_dir, processed_data_dir)
     op_dict['train'] = TrainingOp('train', input_dir=raw_data_dir, output_dir=output_dir,
                                   epochs=epochs, model_name=model_name, model_version=model_version,
-                                  batch_size=batch_size, learning_rate=learning_rate, resume_training=resume_training)
+                                  batch_size=batch_size, learning_rate=learning_rate, resume_training=resume_training,
+                                  par_reads=par_reads)
 
     for _, container_op in op_dict.items():
         container_op.add_volume(k8s_client.V1Volume(persistent_volume_claim=k8s_client.V1PersistentVolumeClaimVolumeSource(claim_name=persistent_volume_name), name=persistent_volume_name)),

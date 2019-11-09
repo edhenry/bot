@@ -34,6 +34,7 @@ def main():
     parser.add_argument('--batch_size', help="Batch size for training data (eg. 128 (default))")
     parser.add_argument('--learning_rate', help="Learning rate to use with optimizer (eg. 0.0001 or 1e-4)")
     parser.add_argument('--resume_training', help="Resume training of a model version that already exists (eg. True or False)")
+    parser.add_argument('--par_reads', help="Number of processes to use for dataset parallelism")
     args = parser.parse_args()
 
     if args.batch_size:
@@ -45,6 +46,7 @@ def main():
     DATA_AUGMENTATION = args.data_augment
     MODEL_VERSION = int(args.model_version)
     MODEL_NAME = args.model_name
+    PAR_READS = int(args.par_reads)
 
     print(f"Model Output Directory : {args.output_dir}/{MODEL_NAME}")
     print(f"Current Model Version : {MODEL_VERSION}")
@@ -93,7 +95,13 @@ def main():
             directory {str} -- Location on the target filesystem of the TFRecords to be processed
         """
         filenames = [(directory + '/' + f) for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
-        dataset = tf.data.TFRecordDataset(filenames=filenames, num_parallel_reads=4)
+        print(filenames)
+        files = tf.data.Dataset.list_files(filenames)
+
+        ## dataset paralleism
+        ## Here we're utilizing parallelism to deserialize TFRecords from disk
+        dataset = files.interleave(tf.data.TFRecordDataset, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        # dataset = tf.data.TFRecordDataset(filenames=filenames, num_parallel_reads=4)
 
         parsed_dataset = parse_dataset(dataset)
         return parsed_dataset

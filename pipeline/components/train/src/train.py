@@ -335,7 +335,9 @@ def main():
         validation_loss.reset_states()
         test_loss.reset_states()
     
-    model.save((model_directory + "/" + MODEL_NAME + "-" + str(MODEL_VERSION) + "-" + str(EPOCHS)))
+    # TODO come up with a better standardized way to represent models / metadata on disk...
+    # tf.saved_model.save(model, (model_directory + "/" + str(MODEL_VERSION) + "/" + (str(MODEL_VERSION) + "-" + str(EPOCHS))))
+    model.save_weights(os.path.join(model_directory, str(MODEL_VERSION), (str(MODEL_VERSION) + "-" + str(EPOCHS))), save_format='h5')
 
     tensorboard_metadata = {
       'outputs' : [{

@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: tensorboard-pv
+  namespace: edhenry
+spec:
+  storageClassName: tensorboard-manual
+  capacity:
+    storage: 500Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/datasets"
+    type: Directory
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tensorboard-claim
+spec:
+  storageClassName: tensorboard-manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: tensorboard
+  name: tensorboard
+spec:
+  ports:
+  - port: 80
+    targetPort: 6006
+  selector:
+    app: tensorboard
+  type: ClusterIP
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: tensorboard
+  name: tensorboard
+spec:
+  template:
+    metadata:
+      labels:
+        app: tensorboard
+    spec:
+      volumes:
+      - name: tensorboard-pv-claim
+        persistentVolumeClaim:
+            claimName: tensorboard-claim 
+      containers:
+      - name: tensorboard
+        command: ["/bin/sh", "-c"]
+        args: ["tensorboard --logdir /datasets/experiments --bind_all"]
+        image: edhenry/tensorboard-profiler:0.1
+        ports:
+        - containerPort: 6006
+        volumeMounts:
+        - mountPath: "/datasets"
+          name: tensorboard-pv-claim  

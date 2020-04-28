@@ -149,7 +149,7 @@ def main():
 
     raw_dataset = load_data(args.input_dir)
 
-    # quick hack to get the length of the entire dataset for creating train / val / test splots
+    # quick hack to get the length of the entire dataset for creating train / val / test splits
     record_count = 0
     for record in raw_dataset:
         record_count += 1

@@ -149,7 +149,7 @@ def main():
     # quick hack to get the length of the entire dataset for creating train / val / test splots
     record_count = 0
 
-    for record in raw_dataset:
+    for _ in raw_dataset:
         record_count += 1
 
     print(f'Total Records contained within this directory : {record_count}')

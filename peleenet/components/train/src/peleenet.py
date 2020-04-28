@@ -155,6 +155,7 @@ def main():
     parser.add_argument('--subtract_pixel_mean', help="Enable or disable subtracting the pixel mean from input image batches")
     parser.add_argument('--batch_size', help="Batch size for batching training data (eg. 128)")
     parser.add_argument('--learning_rate', help="Learning rate to use with the optimizer we choose on our model (eg. 1e-3 or 0.003)")
+    parser.add_argument('--momentum', help="Momentum to use for the SGD Optimizer")
     parser.add_argument('--dataset_split', nargs='+', type=float, help="What splits to use for partitioning data between training, validation, and test (eg. 0.7 0.15 0.15) (repsectively))")
     parser.add_argument('--growth_rate', help="Growth Rate as defined in the PeleeNet paper (eg. 32)")
     parser.add_argument('--bottle_neck_width', nargs="+", type=int, help="Bottle Neck Width as defined in the PeleeNet paper (eg. 1 2 4 4)")
@@ -162,6 +163,7 @@ def main():
 
     EPOCHS = int(args.epochs)
     LEARNING_RATE = float(args.learning_rate)
+    MOMENTUM = float(args.momentum)
     DATA_AUGMENTATION = args.data_augment
     RESIZE = int(args.resize)
     SCALE_IMG = int(args.scale_img)
@@ -269,7 +271,7 @@ def main():
     print(f"Model output directory : {args.output_dir}/{args.model_name}")
 
     loss_object = tf.losses.SparseCategoricalCrossentropy()
-    optimizer = tf.optimizers.SGD(learning_rate=LEARNING_RATE)
+    optimizer = tf.optimizers.SGD(learning_rate=LEARNING_RATE, momentum=MOMENTUM)
 
     train_loss = tf.keras.metrics.Mean(name='train_loss')
     validation_loss = tf.keras.metrics.Mean(name='validation_loss')

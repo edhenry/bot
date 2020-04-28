@@ -150,22 +150,32 @@ def main():
     parser.add_argument('--model_version', help="Version of the model (eg. 1.0.0 (versioning scheme independent))")
     parser.add_argument('--data_augment', help="Enable or disable data augmentation")
     parser.add_argument('--resize', help="Resize training data (eg. 32 (where original image size is (224,224) this would resize the image to (256, 256)))")
+    parser.add_argument('--scale_img', help="Factor by which to scale the input image (eg. 7 (if the input image is 32x32x3 (HWC) the output would be (224,224,3)))")
     parser.add_argument('--crop_pct', help="Percentage to center crop training image (eg. 0.5 will center crop to the middle 50% of pixels in the image)")
     parser.add_argument('--subtract_pixel_mean', help="Enable or disable subtracting the pixel mean from input image batches")
     parser.add_argument('--batch_size', help="Batch size for batching training data (eg. 128)")
     parser.add_argument('--learning_rate', help="Learning rate to use with the optimizer we choose on our model (eg. 1e-3 or 0.003)")
-    parser.add_argument('--dataset_split', nargs='+', help="What splits to use for partitioning data between training, validation, and test (eg. (0.7, 0.15, 0.15) (repsectively))")
+    parser.add_argument('--dataset_split', nargs='+', type=float, help="What splits to use for partitioning data between training, validation, and test (eg. 0.7 0.15 0.15) (repsectively))")
     parser.add_argument('--growth_rate', help="Growth Rate as defined in the PeleeNet paper (eg. 32)")
-    parser.add_argument('--bottle_neck_width', help="Bottle Neck Width as defined in the PeleeNet paper (eg. 1)")
+    parser.add_argument('--bottle_neck_width', nargs="+", type=int, help="Bottle Neck Width as defined in the PeleeNet paper (eg. 1 2 4 4)")
     args = parser.parse_args()
 
     EPOCHS = int(args.epochs)
     LEARNING_RATE = float(args.learning_rate)
     DATA_AUGMENTATION = args.data_augment
     RESIZE = int(args.resize)
+    SCALE_IMG = int(args.scale_img)
     CROP_PERCENT = float(args.crop_pct)
-    GROWTH_RATE = int(args.growth_rate)
-    BOTTLENECK_WIDTH = int(args.bottle_neck_width)
+
+    if args.growth_rate:
+        GROWTH_RATE = int(args.growth_rate)
+    else:
+        GROWTH_RATE = 32
+
+    if args.bottle_neck_width:
+        BOTTLENECK_WIDTH = list(args.bottle_neck_width)
+    else:
+        BOTTLENECK_WIDTH = [1,2,4,4]
 
     # TODO For data management, is there a way we can automate this process
     # for users whom use our platform(s)? Something to investigate when 
@@ -194,6 +204,8 @@ def main():
                                                               as_supervised=True,
                                                               with_info=True
                                                               )
+    INPUT_SIZE = cifar100_info.features['image'].shape
+    NUM_CLASSES = cifar100_info.features['label']
 
     def normalize(image: tf.data.Dataset, label: tf.data.Dataset) -> tf.data.Dataset:
         """ Normalize the pixel data within the images
@@ -207,7 +219,25 @@ def main():
         """
         return tf.cast(image, tf.float32) / 255.0, label
     
-    def augment(image: tf.data.Dataset, label: tf.data.Dataset) -> tf.data.Dataset:
+    def training_augment(image: tf.data.Dataset, label: tf.data.Dataset) -> tf.data.Dataset:
+        """Training Augmentation Pipeline
+
+        Arguments:
+            image {tf.data.Dataset} -- Images contained within TF Dataset
+            label {tf.data.Dataset} -- Labels contained within TF Dataset
+
+        Returns:
+            tf.data.Dataset -- Augmented Images contained with TF Dataset
+        """
+
+        original_img = image
+        aug_img = tf.image.random_crop(original_img, size=[32, 32, 3])
+        aug_img = tf.image.resize(original_img, (((INPUT_SIZE[0] * SCALE_IMG) + RESIZE), ((INPUT_SIZE[0] * SCALE_IMG) + RESIZE)))
+        aug_img = tf.image.random_flip_left_right(aug_img)
+        aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
+        return aug_img, label
+
+    def test_augment(image: tf.data.Dataset, label: tf.data.Dataset) -> tf.data.Dataset:
         """ Augment the datasets
         
         Arguments:
@@ -218,20 +248,23 @@ def main():
             tf.dataset.Dataset -- Augmented Images
         """
         original_img = image
-        aug_img = tf.image.resize(original_img, ((224+RESIZE), (224+RESIZE)))
+        aug_img = tf.image.resize(original_img, (((INPUT_SIZE[0] * SCALE_IMG) + RESIZE), ((INPUT_SIZE[0] * SCALE_IMG) + RESIZE)))
         aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
         return aug_img, label
 
+    cifar100_train = cifar100_train.map(training_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     cifar100_train = cifar100_train.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    cifar100_train = cifar100_train.map(augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     cifar100_train = cifar100_train.cache()
     # shuffle our dataset respective of the number of training examples
     cifar100_train = cifar100_train.shuffle(cifar100_info.splits['train'].num_examples)
     cifar100_train = cifar100_train.batch(BATCH_SIZE)
     cifar100_train = cifar100_train.prefetch(tf.data.experimental.AUTOTUNE)
 
-    INPUT_SIZE = cifar100_info.features['image'].shape
-    NUM_CLASSES = cifar100_info.features['label']
+    cifar100_test = cifar100_test.map(test_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    cifar100_test = cifar100_test.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    cifar100_test = cifar100_test.cache()
+    cifar100_test = cifar100_test.batch(BATCH_SIZE)
+    cifar100_test = cifar100_test.prefetch(tf.data.experimental.AUTOTUNE)
 
     print(f"Model output directory : {args.output_dir}/{args.model_name}")
 
@@ -242,7 +275,10 @@ def main():
     validation_loss = tf.keras.metrics.Mean(name='validation_loss')
     test_loss = tf.keras.metrics.Mean(name='test_loss')
 
-    model = PeleeNet()
+    train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
+    test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
+
+    model = PeleeNet(bottleneck_width=BOTTLENECK_WIDTH, growth_rate=GROWTH_RATE)
 
     @tf.function
     def train_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
@@ -259,6 +295,7 @@ def main():
         gradients = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
+        train_accuracy(labels, predictions)
         train_loss(loss)
 
     @tf.function
@@ -266,8 +303,8 @@ def main():
         """[summary]
 
         Arguments:
-            images {tf.data.Dataset.batch} -- [description]
-            labels {tf.data.Dataset.batch} -- [description]
+            images {tf.data.Dataset.batch} -- Batch of validation images
+            labels {tf.data.Dataset.batch} -- Batch of validation labels
         """
         predictions = model(images)
         v_loss = loss_object(labels, predictions)
@@ -276,18 +313,18 @@ def main():
 
     @tf.function
     def test_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
-        """[summary]
+        """Test step for use with training our model
 
         Arguments:
-            images {tf.data.Dataset.batch} -- [description]
-            tf {[type]} -- [description]
+            images {tf.data.Dataset.batch} -- Batch of testing images
+            labels {tf.data.Dataset.batch} -- Batch of testing labels
         """
         predictions = model(images)
-        t_loss = loss_object(predictions, labels)
+        t_loss = loss_object(labels, predictions)
+        test_accuracy(labels, predictions)
 
         test_loss(t_loss)
-
-
+        
     #TODO clean up this logic for directory creation 
     if os.path.isdir(MODEL_DIRECTORY):
         shutil.rmtree(MODEL_DIRECTORY)
@@ -326,17 +363,21 @@ def main():
             train_step(images, labels)
         with train_summary_writer.as_default():
             tf.summary.scalar('train_loss', train_loss.result(), step=epoch)
-        
-        # print(f"Testing epoch number {(epoch + 1)}...")
-        # test_step(cifar100_test['images'], cifar100_test['labels'])
-        # with test_summary_writer.as_default():
-        #     tf.summary.scalar('test_loss', test_loss.result(), step=epoch)
-        print(f"Epoch : {epoch+1}, Training Loss : {train_loss.result()}")
+            tf.summary.scalar('train_accuracy', train_loss.result(), step=epoch)        
+        for step, (images, labels) in enumerate(cifar100_test):
+            test_step(images, labels)
+        with test_summary_writer.as_default():
+            tf.summary.scalar('test_loss', test_loss.result(), step=epoch)
+            tf.summary.scalar('test_accuracy', test_accuracy.result(), step=epoch)
+        print(f"Epoch : {epoch+1}, \n Training Loss : {train_loss.result()}, \n Training Accuracy : {train_accuracy.result()}, \n Test Loss : {test_loss.result()}, \n Test Accuracy : {test_accuracy.result()}")
         checkpoint_manager.save(checkpoint_number=None)
-    
+
+        # Reset metric states for each epoch
         train_loss.reset_states()
+        train_accuracy.reset_states()
         validation_loss.reset_states()
         test_loss.reset_states()
+        test_accuracy.reset_states()
     
     model.save((MODEL_DIRECTORY + "/" + "PELEENET" + "-" + str(MODEL_VERSION) + '-' + str(EPOCHS)))
 

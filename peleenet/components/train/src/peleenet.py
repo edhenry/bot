@@ -15,7 +15,8 @@ from tensorflow.keras import Sequential, regularizers
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 from tensorflow.keras.layers import (Activation, AveragePooling2D,
                                      BatchNormalization, Concatenate, Conv2D,
-                                     Dense, Dropout, Flatten, Input, MaxPool2D)
+                                     Dense, Dropout, Flatten, Input, 
+                                     MaxPool2D, GlobalAveragePooling2D)
 from tensorflow.keras.models import Model
 
 import tensorflow_datasets as tfds
@@ -31,12 +32,12 @@ class _DenseLayer(Model):
             inter_channel = int(num_input_features / 8) * 4
             print(f'adjusting inter_channel to {inter_channel}')
         
-        self.branch1a = BasicConv2D(num_input_features, inter_channel, kernel_size=1, padding="same")
-        self.branch1b = BasicConv2D(inter_channel, growth_rate, kernel_size=3, padding="same")
+        self.branch1a = BasicConv2D(inter_channel, kernel_size=1, padding="same")
+        self.branch1b = BasicConv2D(growth_rate, kernel_size=3, padding="same")
 
-        self.branch2a = BasicConv2D(num_input_features, inter_channel, kernel_size=1, padding="same")
-        self.branch2b = BasicConv2D(inter_channel, growth_rate, kernel_size=3, padding="same")
-        self.branch2c = BasicConv2D(growth_rate, growth_rate, kernel_size=3, padding="same")
+        self.branch2a = BasicConv2D(inter_channel, kernel_size=1, padding="same")
+        self.branch2b = BasicConv2D(growth_rate, kernel_size=3, padding="same")
+        self.branch2c = BasicConv2D(growth_rate, kernel_size=3, padding="same")
 
     def call(self, x):
         branch1 = self.branch1a(x)
@@ -82,7 +83,7 @@ class _StemBlock(Model):
 class BasicConv2D(Model):
     def __init__(self, out_channels, activation=True, **kwargs):
         super(BasicConv2D, self).__init__()
-        self.conv = Conv2D(filters=out_channels, use_bias=False, **kwargs)
+        self.conv = Conv2D(filters=out_channels, use_bias=False, kernel_initializer='glorot_uniform', **kwargs)
         self.norm = BatchNormalization()
         self.activation = activation
     
@@ -129,12 +130,12 @@ class PeleeNet(Model):
                 num_features = num_features
 
         # Dense layer
-        self.classifier = Dense(num_classes)
+        self.classifier = Dense(num_classes, kernel_initializer='glorot_uniform')
         self.drop_rate = drop_rate
 
     def call(self, x):
         features = self.features(x)
-        out = AveragePooling2D(2)(features)
+        out = GlobalAveragePooling2D()(features)
 
         if self.drop_rate > 0:
             out = Dropout(self.drop_rate)(out)
@@ -233,10 +234,11 @@ def main():
         """
 
         original_img = image
-        aug_img = tf.image.random_crop(original_img, size=[32, 32, 3])
+        #aug_img = tf.image.random_crop(original_img, size=[32, 32, 3])
         aug_img = tf.image.resize(original_img, (((INPUT_SIZE[0] * SCALE_IMG) + RESIZE), ((INPUT_SIZE[0] * SCALE_IMG) + RESIZE)))
         aug_img = tf.image.random_flip_left_right(aug_img)
-        aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
+        aug_img = tf.image.resize(aug_img, (128, 128))
+        #aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
         return aug_img, label
 
     def test_augment(image: tf.data.Dataset, label: tf.data.Dataset) -> tf.data.Dataset:
@@ -251,12 +253,13 @@ def main():
         """
         original_img = image
         aug_img = tf.image.resize(original_img, (((INPUT_SIZE[0] * SCALE_IMG) + RESIZE), ((INPUT_SIZE[0] * SCALE_IMG) + RESIZE)))
-        aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
+        aug_img = tf.image.resize(aug_img, (128, 128))
+        #aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
         return aug_img, label
 
     cifar100_train = cifar100_train.map(training_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     cifar100_train = cifar100_train.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    cifar100_train = cifar100_train.cache()
+    #cifar100_train = cifar100_train.cache()
     # shuffle our dataset respective of the number of training examples
     cifar100_train = cifar100_train.shuffle(cifar100_info.splits['train'].num_examples)
     cifar100_train = cifar100_train.batch(BATCH_SIZE)
@@ -264,68 +267,68 @@ def main():
 
     cifar100_test = cifar100_test.map(test_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     cifar100_test = cifar100_test.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    cifar100_test = cifar100_test.cache()
+    #cifar100_test = cifar100_test.cache()
     cifar100_test = cifar100_test.batch(BATCH_SIZE)
     cifar100_test = cifar100_test.prefetch(tf.data.experimental.AUTOTUNE)
 
     print(f"Model output directory : {args.output_dir}/{args.model_name}")
 
-    loss_object = tf.losses.SparseCategoricalCrossentropy()
-    optimizer = tf.optimizers.SGD(learning_rate=LEARNING_RATE, momentum=MOMENTUM)
+    # loss_object = tf.losses.SparseCategoricalCrossentropy()
+    # optimizer = tf.optimizers.SGD(learning_rate=LEARNING_RATE, momentum=MOMENTUM)
 
-    train_loss = tf.keras.metrics.Mean(name='train_loss')
-    validation_loss = tf.keras.metrics.Mean(name='validation_loss')
-    test_loss = tf.keras.metrics.Mean(name='test_loss')
+    # train_loss = tf.keras.metrics.Mean(name='train_loss')
+    # validation_loss = tf.keras.metrics.Mean(name='validation_loss')
+    # test_loss = tf.keras.metrics.Mean(name='test_loss')
 
-    train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
-    test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
+    # train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
+    # test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
 
     model = PeleeNet(bottleneck_width=BOTTLENECK_WIDTH, growth_rate=GROWTH_RATE)
 
-    @tf.function
-    def train_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
-        """Training step for our model
+    # @tf.function
+    # def train_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
+    #     """Training step for our model
 
-        Arguments:
-            images {tf.data.Dataset.batch} -- Single batch of images for model training
-            labels {tf.data.Dataset.batch} -- Single batch of labels for model training
-        """
-        with tf.GradientTape() as tape:
-            predictions = model(images, training=True)
-            loss = loss_object(labels, predictions)
+    #     Arguments:
+    #         images {tf.data.Dataset.batch} -- Single batch of images for model training
+    #         labels {tf.data.Dataset.batch} -- Single batch of labels for model training
+    #     """
+    #     with tf.GradientTape() as tape:
+    #         predictions = model(images, training=True)
+    #         loss = loss_object(labels, predictions)
         
-        gradients = tape.gradient(loss, model.trainable_variables)
-        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+    #     gradients = tape.gradient(loss, model.trainable_variables)
+    #     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
-        train_accuracy(labels, predictions)
-        train_loss(loss)
+    #     train_accuracy(labels, predictions)
+    #     train_loss(loss)
 
-    @tf.function
-    def validation_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
-        """[summary]
+    # @tf.function
+    # def validation_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
+    #     """[summary]
 
-        Arguments:
-            images {tf.data.Dataset.batch} -- Batch of validation images
-            labels {tf.data.Dataset.batch} -- Batch of validation labels
-        """
-        predictions = model(images)
-        v_loss = loss_object(labels, predictions)
+    #     Arguments:
+    #         images {tf.data.Dataset.batch} -- Batch of validation images
+    #         labels {tf.data.Dataset.batch} -- Batch of validation labels
+    #     """
+    #     predictions = model(images)
+    #     v_loss = loss_object(labels, predictions)
 
-        validation_loss(v_loss)
+    #     validation_loss(v_loss)
 
-    @tf.function
-    def test_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
-        """Test step for use with training our model
+    # @tf.function
+    # def test_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
+    #     """Test step for use with training our model
 
-        Arguments:
-            images {tf.data.Dataset.batch} -- Batch of testing images
-            labels {tf.data.Dataset.batch} -- Batch of testing labels
-        """
-        predictions = model(images)
-        t_loss = loss_object(labels, predictions)
-        test_accuracy(labels, predictions)
+    #     Arguments:
+    #         images {tf.data.Dataset.batch} -- Batch of testing images
+    #         labels {tf.data.Dataset.batch} -- Batch of testing labels
+    #     """
+    #     predictions = model(images)
+    #     t_loss = loss_object(labels, predictions)
+    #     test_accuracy(labels, predictions)
 
-        test_loss(t_loss)
+    #     test_loss(t_loss)
         
     #TODO clean up this logic for directory creation 
     if os.path.isdir(MODEL_DIRECTORY):
@@ -341,9 +344,9 @@ def main():
     os.mkdir(checkpoint_dir)
     os.mkdir(tensorboard_dir)
 
-    checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
-    checkpoint_path = checkpoint_dir + '/'
-    checkpoint_manager = tf.train.CheckpointManager(checkpoint, directory=checkpoint_path, max_to_keep=5)
+    # checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
+    # checkpoint_path = checkpoint_dir + '/'
+    # checkpoint_manager = tf.train.CheckpointManager(checkpoint, directory=checkpoint_path, max_to_keep=5)
 
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     train_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/train'
@@ -355,31 +358,55 @@ def main():
     os.makedirs(test_log_dir)
     os.makedirs(validation_log_dir)
 
-    train_summary_writer = tf.summary.create_file_writer(train_log_dir)
-    test_summary_writer = tf.summary.create_file_writer(test_log_dir)
-    validation_summary_writer =tf.summary.create_file_writer(validation_log_dir)
 
-    for epoch in range(EPOCHS):
-        print(f"Starting epoch number {(epoch + 1)}...")
-        for step, (images, labels) in enumerate(cifar100_train):
-            train_step(images, labels)
-        with train_summary_writer.as_default():
-            tf.summary.scalar('train_loss', train_loss.result(), step=epoch)
-            tf.summary.scalar('train_accuracy', train_loss.result(), step=epoch)        
-        for step, (images, labels) in enumerate(cifar100_test):
-            test_step(images, labels)
-        with test_summary_writer.as_default():
-            tf.summary.scalar('test_loss', test_loss.result(), step=epoch)
-            tf.summary.scalar('test_accuracy', test_accuracy.result(), step=epoch)
-        print(f"Epoch : {epoch+1}, \n Training Loss : {train_loss.result()}, \n Training Accuracy : {train_accuracy.result()}, \n Test Loss : {test_loss.result()}, \n Test Accuracy : {test_accuracy.result()}")
-        checkpoint_manager.save(checkpoint_number=None)
+    model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=LEARNING_RATE, momentum=MOMENTUM),
+                  loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+                  metrics=['acc'])
 
-        # Reset metric states for each epoch
-        train_loss.reset_states()
-        train_accuracy.reset_states()
-        validation_loss.reset_states()
-        test_loss.reset_states()
-        test_accuracy.reset_states()
+    checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_dir, monitor='val_loss', verbose=1, 
+                                                    mode='auto', save_best_only=True, save_freq='epoch', save_weights_only=False)
+    tensorboard = tf.keras.callbacks.TensorBoard(log_dir=tensorboard_dir, histogram_freq=20, write_graph=True,
+                                                 update_freq='batch', profile_batch=2,)
+
+    lr_plateau = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5,
+                                                      verbose=1, mode='auto', cooldown=0, min_lr=0.0001)
+
+    tf.keras.utils.plot_model(model, './model3.png', expand_nested=True, show_layer_names=True, show_shapes=True, dpi=96)
+
+    print('Fit model...')
+    history = model.fit(cifar100_train,
+                        epochs=EPOCHS,
+                        validation_data=cifar100_test,
+                        validation_steps=32,
+                        callbacks=[lr_plateau, checkpoint, tensorboard])
+    
+    print(f'\nhistory dict: {history.history}')
+
+    # train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+    # test_summary_writer = tf.summary.create_file_writer(test_log_dir)
+    # validation_summary_writer =tf.summary.create_file_writer(validation_log_dir)
+
+    # for epoch in range(EPOCHS):
+    #     print(f"Starting epoch number {(epoch + 1)}...")
+    #     for step, (images, labels) in enumerate(cifar100_train):
+    #         train_step(images, labels)
+    #     with train_summary_writer.as_default():
+    #         tf.summary.scalar('train_loss', train_loss.result(), step=epoch)
+    #         tf.summary.scalar('train_accuracy', train_loss.result(), step=epoch)        
+    #     for step, (images, labels) in enumerate(cifar100_test):
+    #         test_step(images, labels)
+    #     with test_summary_writer.as_default():
+    #         tf.summary.scalar('test_loss', test_loss.result(), step=epoch)
+    #         tf.summary.scalar('test_accuracy', test_accuracy.result(), step=epoch)
+    #     print(f"Epoch : {epoch+1}, \n Training Loss : {train_loss.result()}, \n Training Accuracy : {train_accuracy.result()}, \n Test Loss : {test_loss.result()}, \n Test Accuracy : {test_accuracy.result()}")
+    #     checkpoint_manager.save(checkpoint_number=None)
+
+    #     # Reset metric states for each epoch
+    #     train_loss.reset_states()
+    #     train_accuracy.reset_states()
+    #     validation_loss.reset_states()
+    #     test_loss.reset_states()
+    #     test_accuracy.reset_states()
     
     model.save((MODEL_DIRECTORY + "/" + "PELEENET" + "-" + str(MODEL_VERSION) + '-' + str(EPOCHS)))
 

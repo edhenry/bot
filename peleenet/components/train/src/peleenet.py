@@ -83,7 +83,7 @@ class _StemBlock(Model):
 class BasicConv2D(Model):
     def __init__(self, out_channels, activation=True, **kwargs):
         super(BasicConv2D, self).__init__()
-        self.conv = Conv2D(filters=out_channels, use_bias=False, kernel_initializer='glorot_uniform', **kwargs)
+        self.conv = Conv2D(filters=out_channels, use_bias=False, kernel_initializer='glorot_uniform', kernel_regularizer=tf.keras.regularizers.l2(5e-4), **kwargs)
         self.norm = BatchNormalization()
         self.activation = activation
     
@@ -157,6 +157,7 @@ def main():
     parser.add_argument('--batch_size', help="Batch size for batching training data (eg. 128)")
     parser.add_argument('--learning_rate', help="Learning rate to use with the optimizer we choose on our model (eg. 1e-3 or 0.003)")
     parser.add_argument('--momentum', help="Momentum to use for the SGD Optimizer")
+    parser.add_argument('--dropout', help="Percentage of dropout to add to the network (eg .5 == 50% dropout rate")
     parser.add_argument('--dataset_split', nargs='+', type=float, help="What splits to use for partitioning data between training, validation, and test (eg. 0.7 0.15 0.15) (repsectively))")
     parser.add_argument('--growth_rate', help="Growth Rate as defined in the PeleeNet paper (eg. 32)")
     parser.add_argument('--bottle_neck_width', nargs="+", type=int, help="Bottle Neck Width as defined in the PeleeNet paper (eg. 1 2 4 4)")
@@ -169,6 +170,7 @@ def main():
     RESIZE = int(args.resize)
     SCALE_IMG = int(args.scale_img)
     CROP_PERCENT = float(args.crop_pct)
+    DROPOUT = float(args.dropout)
 
     if args.growth_rate:
         GROWTH_RATE = int(args.growth_rate)
@@ -232,12 +234,13 @@ def main():
         Returns:
             tf.data.Dataset -- Augmented Images contained with TF Dataset
         """
-
+        print(image)
         original_img = image
-        #aug_img = tf.image.random_crop(original_img, size=[32, 32, 3])
         aug_img = tf.image.resize(original_img, (((INPUT_SIZE[0] * SCALE_IMG) + RESIZE), ((INPUT_SIZE[0] * SCALE_IMG) + RESIZE)))
+        aug_img = tf.image.random_crop(aug_img, size=[224, 224, 3])
+        aug_img = tf.image.resize(aug_img, (224, 224))
         aug_img = tf.image.random_flip_left_right(aug_img)
-        aug_img = tf.image.resize(aug_img, (128, 128))
+        print(aug_img)
         #aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
         return aug_img, label
 
@@ -253,14 +256,16 @@ def main():
         """
         original_img = image
         aug_img = tf.image.resize(original_img, (((INPUT_SIZE[0] * SCALE_IMG) + RESIZE), ((INPUT_SIZE[0] * SCALE_IMG) + RESIZE)))
-        aug_img = tf.image.resize(aug_img, (128, 128))
+        aug_img = tf.image.resize(aug_img, (224, 224))
         #aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
         return aug_img, label
 
-    cifar100_train = cifar100_train.map(training_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    cifar100_train = cifar100_train.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    
     #cifar100_train = cifar100_train.cache()
     # shuffle our dataset respective of the number of training examples
+
+    cifar100_train = cifar100_train.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    cifar100_train = cifar100_train.map(training_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     cifar100_train = cifar100_train.shuffle(cifar100_info.splits['train'].num_examples)
     cifar100_train = cifar100_train.batch(BATCH_SIZE)
     cifar100_train = cifar100_train.prefetch(tf.data.experimental.AUTOTUNE)
@@ -268,7 +273,7 @@ def main():
     cifar100_test = cifar100_test.map(test_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     cifar100_test = cifar100_test.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     #cifar100_test = cifar100_test.cache()
-    cifar100_test = cifar100_test.batch(BATCH_SIZE)
+    cifar100_test = cifar100_test.batch(128)
     cifar100_test = cifar100_test.prefetch(tf.data.experimental.AUTOTUNE)
 
     print(f"Model output directory : {args.output_dir}/{args.model_name}")
@@ -283,7 +288,7 @@ def main():
     # train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
     # test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
 
-    model = PeleeNet(bottleneck_width=BOTTLENECK_WIDTH, growth_rate=GROWTH_RATE)
+    model = PeleeNet(bottleneck_width=BOTTLENECK_WIDTH, growth_rate=GROWTH_RATE, drop_rate=DROPOUT)
 
     # @tf.function
     # def train_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
@@ -332,9 +337,9 @@ def main():
         
     #TODO clean up this logic for directory creation 
     if os.path.isdir(MODEL_DIRECTORY):
-        shutil.rmtree(MODEL_DIRECTORY)
-    os.mkdir(MODEL_DIRECTORY)
-    os.mkdir(os.path.join(MODEL_DIRECTORY, MODEL_VERSION))
+        os.mkdir(os.path.join(MODEL_DIRECTORY, MODEL_VERSION))
+    else:
+        pass
 
     checkpoint_dir = os.path.join(MODEL_DIRECTORY, str(MODEL_VERSION), 'ckpt')
     tensorboard_dir = os.path.join(MODEL_DIRECTORY, str(MODEL_VERSION), 'logs')
@@ -366,9 +371,9 @@ def main():
     checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_dir, monitor='val_loss', verbose=1, 
                                                     mode='auto', save_best_only=True, save_freq='epoch', save_weights_only=False)
     tensorboard = tf.keras.callbacks.TensorBoard(log_dir=tensorboard_dir, histogram_freq=20, write_graph=True,
-                                                 update_freq='batch', profile_batch=2,)
+                                                 update_freq='batch', profile_batch=2)
 
-    lr_plateau = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5,
+    lr_plateau = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.25, patience=5,
                                                       verbose=1, mode='auto', cooldown=0, min_lr=0.0001)
 
     tf.keras.utils.plot_model(model, './model3.png', expand_nested=True, show_layer_names=True, show_shapes=True, dpi=96)
@@ -377,7 +382,6 @@ def main():
     history = model.fit(cifar100_train,
                         epochs=EPOCHS,
                         validation_data=cifar100_test,
-                        validation_steps=32,
                         callbacks=[lr_plateau, checkpoint, tensorboard])
     
     print(f'\nhistory dict: {history.history}')

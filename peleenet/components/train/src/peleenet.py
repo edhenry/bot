@@ -97,7 +97,7 @@ class BasicConv2D(Model):
 
 class PeleeNet(Model):
     def __init__(self, growth_rate=32, block_config=[3,4,8,6], num_init_features=32,
-                 bottleneck_width=[1,2,4,4], drop_rate=0.5, num_classes=100):
+                 bottleneck_width=[1,2,4,4], drop_rate=0.5, num_classes=10):
 
         super(PeleeNet, self).__init__()
 
@@ -203,7 +203,7 @@ def main():
     # load data
 
     (cifar100_train, cifar100_test), cifar100_info = tfds.load(
-                                                              "cifar100",
+                                                              "cifar10",
                                                               split=["train", "test"],
                                                               shuffle_files=False,
                                                               as_supervised=True,
@@ -234,13 +234,11 @@ def main():
         Returns:
             tf.data.Dataset -- Augmented Images contained with TF Dataset
         """
-        print(image)
         original_img = image
         aug_img = tf.image.resize(original_img, (((INPUT_SIZE[0] * SCALE_IMG) + RESIZE), ((INPUT_SIZE[0] * SCALE_IMG) + RESIZE)))
-        aug_img = tf.image.random_crop(aug_img, size=[224, 224, 3])
+        aug_img = tf.image.random_crop(aug_img, size=[BATCH_SIZE,224, 224, 3])
         aug_img = tf.image.resize(aug_img, (224, 224))
         aug_img = tf.image.random_flip_left_right(aug_img)
-        print(aug_img)
         #aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
         return aug_img, label
 
@@ -264,17 +262,17 @@ def main():
     #cifar100_train = cifar100_train.cache()
     # shuffle our dataset respective of the number of training examples
 
-    cifar100_train = cifar100_train.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    cifar100_train = cifar100_train.map(training_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     cifar100_train = cifar100_train.shuffle(cifar100_info.splits['train'].num_examples)
-    cifar100_train = cifar100_train.batch(BATCH_SIZE)
-    cifar100_train = cifar100_train.prefetch(tf.data.experimental.AUTOTUNE)
+    cifar100_train = cifar100_train.batch(BATCH_SIZE, drop_remainder=True)
+    cifar100_train = cifar100_train.map(normalize)
+    cifar100_train = cifar100_train.map(training_augment)
+    cifar100_train = cifar100_train.prefetch(1)
 
-    cifar100_test = cifar100_test.map(test_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    cifar100_test = cifar100_test.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     #cifar100_test = cifar100_test.cache()
-    cifar100_test = cifar100_test.batch(128)
-    cifar100_test = cifar100_test.prefetch(tf.data.experimental.AUTOTUNE)
+    cifar100_test = cifar100_test.batch(BATCH_SIZE, drop_remainder=True)
+    cifar100_test = cifar100_test.map(normalize)
+    cifar100_test = cifar100_test.map(test_augment)
+    cifar100_test = cifar100_test.prefetch(1)
 
     print(f"Model output directory : {args.output_dir}/{args.model_name}")
 
@@ -376,15 +374,12 @@ def main():
     lr_plateau = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.25, patience=5,
                                                       verbose=1, mode='auto', cooldown=0, min_lr=0.0001)
 
-    tf.keras.utils.plot_model(model, './model3.png', expand_nested=True, show_layer_names=True, show_shapes=True, dpi=96)
-
     print('Fit model...')
     history = model.fit(cifar100_train,
                         epochs=EPOCHS,
                         validation_data=cifar100_test,
                         callbacks=[lr_plateau, checkpoint, tensorboard])
-    
-    print(f'\nhistory dict: {history.history}')
+    print(model.summary())
 
     # train_summary_writer = tf.summary.create_file_writer(train_log_dir)
     # test_summary_writer = tf.summary.create_file_writer(test_log_dir)
@@ -412,7 +407,7 @@ def main():
     #     test_loss.reset_states()
     #     test_accuracy.reset_states()
     
-    model.save((MODEL_DIRECTORY + "/" + "PELEENET" + "-" + str(MODEL_VERSION) + '-' + str(EPOCHS)))
+    #model.save((MODEL_DIRECTORY + "/" + "PELEENET" + "-" + str(MODEL_VERSION) + '-' + str(EPOCHS)))
 
     tensorboard_metadata = {
         "outputs": [{

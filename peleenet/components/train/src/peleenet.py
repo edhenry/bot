@@ -97,7 +97,7 @@ class BasicConv2D(Model):
 
 class PeleeNet(Model):
     def __init__(self, growth_rate=32, block_config=[3,4,8,6], num_init_features=32,
-                 bottleneck_width=[1,2,4,4], drop_rate=0.5, num_classes=10):
+                 bottleneck_width=[1,2,4,4], drop_rate=0.5, num_classes=1000):
 
         super(PeleeNet, self).__init__()
 
@@ -157,10 +157,15 @@ def main():
     parser.add_argument('--batch_size', help="Batch size for batching training data (eg. 128)")
     parser.add_argument('--learning_rate', help="Learning rate to use with the optimizer we choose on our model (eg. 1e-3 or 0.003)")
     parser.add_argument('--momentum', help="Momentum to use for the SGD Optimizer")
+    parser.add_argument('--lr_patience', help='Number of epochs with no improvement after which learning rate will be reduced. (eg. 5)')
     parser.add_argument('--dropout', help="Percentage of dropout to add to the network (eg .5 == 50% dropout rate")
     parser.add_argument('--dataset_split', nargs='+', type=float, help="What splits to use for partitioning data between training, validation, and test (eg. 0.7 0.15 0.15) (repsectively))")
     parser.add_argument('--growth_rate', help="Growth Rate as defined in the PeleeNet paper (eg. 32)")
     parser.add_argument('--bottle_neck_width', nargs="+", type=int, help="Bottle Neck Width as defined in the PeleeNet paper (eg. 1 2 4 4)")
+    parser.add_argument('--num_classes', help="Number of classes contained within a dataset. (eg. 1000 for ImageNet)")
+    parser.add_argument('--input_size', help="Input size of the dataset (eg. 224 for images with (224,224,3) dimensions)")
+    parser.add_argument('--prefetch_size', help="Number of batches to prefetch for model training (eg. 5)")
+    parser.add_argument('--shuffle_buffer', help="Number of data points to add to shuffle buffer (eg. 10000)")
     args = parser.parse_args()
 
     EPOCHS = int(args.epochs)
@@ -169,8 +174,17 @@ def main():
     DATA_AUGMENTATION = args.data_augment
     RESIZE = int(args.resize)
     SCALE_IMG = int(args.scale_img)
-    CROP_PERCENT = float(args.crop_pct)
     DROPOUT = float(args.dropout)
+    PATIENCE = int(args.lr_patience)
+    NUM_CLASSES = int(args.num_classes)
+    INPUT_SIZE = int(args.input_size)
+    PREFETCH_SIZE = int(args.prefetch_size)
+    SHUFFLE_BUFFER = int(args.shuffle_buffer)
+    
+    if args.crop_pct:
+        CROP_PERCENT = float(args.crop_pct)
+    else:
+        pass
 
     if args.growth_rate:
         GROWTH_RATE = int(args.growth_rate)
@@ -194,23 +208,29 @@ def main():
     else:
         BATCH_SIZE = 128
     
-    dataset_splits = args.dataset_split
+    # dataset_splits = args.dataset_split
 
-    TRAIN_SIZE = dataset_splits[0]
-    VALIDATION_SIZE = dataset_splits[1]
-    TEST_SIZE = dataset_splits[2]
+    # TRAIN_SIZE = dataset_splits[0]
+    # VALIDATION_SIZE = dataset_splits[1]
+    # TEST_SIZE = dataset_splits[2]
 
     # load data
 
-    (cifar100_train, cifar100_test), cifar100_info = tfds.load(
-                                                              "cifar10",
-                                                              split=["train", "test"],
-                                                              shuffle_files=False,
-                                                              as_supervised=True,
-                                                              with_info=True
-                                                              )
-    INPUT_SIZE = cifar100_info.features['image'].shape
-    NUM_CLASSES = cifar100_info.features['label']
+    #TODO: Break out data loading functionality into separate module
+    # # image_net = tfds.builder("imagenet2012")
+    # download_config = tfds.download.DownloadConfig()
+    # download_config.manual_dir="/mnt/datasets/"
+    # # image_net.download_and_prepare(download_config=download_config)
+
+    # # image_net.as_dataset()
+    # # image_net_train, image_net_valid = image_net['train'], image_net['valid']
+
+    (train, test), info = tfds.load("imagenet2012",
+                                    split=["train", "validation"],
+                                    shuffle_files=True,
+                                    as_supervised=True,
+                                    with_info=True,
+                                    data_dir="/mnt/datasets/tensorflow_datasets")
 
     def normalize(image: tf.data.Dataset, label: tf.data.Dataset) -> tf.data.Dataset:
         """ Normalize the pixel data within the images
@@ -235,11 +255,15 @@ def main():
             tf.data.Dataset -- Augmented Images contained with TF Dataset
         """
         original_img = image
-        aug_img = tf.image.resize(original_img, (((INPUT_SIZE[0] * SCALE_IMG) + RESIZE), ((INPUT_SIZE[0] * SCALE_IMG) + RESIZE)))
-        aug_img = tf.image.random_crop(aug_img, size=[BATCH_SIZE,224, 224, 3])
+        aug_img = tf.image.per_image_standardization(original_img)
+        aug_img = tf.image.resize(aug_img, (((INPUT_SIZE * SCALE_IMG) + RESIZE), ((INPUT_SIZE * SCALE_IMG) + RESIZE)))
+        aug_img = tf.image.random_crop(aug_img, size=[224, 224, 3])
         aug_img = tf.image.resize(aug_img, (224, 224))
         aug_img = tf.image.random_flip_left_right(aug_img)
-        #aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
+        if CROP_PERCENT:
+            aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
+        else:
+            pass
         return aug_img, label
 
     def test_augment(image: tf.data.Dataset, label: tf.data.Dataset) -> tf.data.Dataset:
@@ -253,26 +277,26 @@ def main():
             tf.dataset.Dataset -- Augmented Images
         """
         original_img = image
-        aug_img = tf.image.resize(original_img, (((INPUT_SIZE[0] * SCALE_IMG) + RESIZE), ((INPUT_SIZE[0] * SCALE_IMG) + RESIZE)))
+        aug_img = tf.image.per_image_standardization(original_img)
+        aug_img = tf.image.resize(aug_img, (((INPUT_SIZE * SCALE_IMG) + RESIZE), ((INPUT_SIZE * SCALE_IMG) + RESIZE)))
         aug_img = tf.image.resize(aug_img, (224, 224))
         #aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
         return aug_img, label
 
     
-    #cifar100_train = cifar100_train.cache()
     # shuffle our dataset respective of the number of training examples
 
-    cifar100_train = cifar100_train.shuffle(cifar100_info.splits['train'].num_examples)
-    cifar100_train = cifar100_train.batch(BATCH_SIZE, drop_remainder=True)
-    cifar100_train = cifar100_train.map(normalize)
-    cifar100_train = cifar100_train.map(training_augment)
-    cifar100_train = cifar100_train.prefetch(1)
+    train = train.shuffle(SHUFFLE_BUFFER, reshuffle_each_iteration=True)
+    train = train.map(normalize)
+    train = train.map(training_augment)
+    train = train.batch(BATCH_SIZE, drop_remainder=True)
+    train = train.prefetch(PREFETCH_SIZE)
 
     #cifar100_test = cifar100_test.cache()
-    cifar100_test = cifar100_test.batch(BATCH_SIZE, drop_remainder=True)
-    cifar100_test = cifar100_test.map(normalize)
-    cifar100_test = cifar100_test.map(test_augment)
-    cifar100_test = cifar100_test.prefetch(1)
+    test = test.map(normalize)
+    test = test.map(test_augment)
+    test = test.batch(BATCH_SIZE, drop_remainder=True)
+    test = test.prefetch(PREFETCH_SIZE)
 
     print(f"Model output directory : {args.output_dir}/{args.model_name}")
 
@@ -286,7 +310,7 @@ def main():
     # train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
     # test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
 
-    model = PeleeNet(bottleneck_width=BOTTLENECK_WIDTH, growth_rate=GROWTH_RATE, drop_rate=DROPOUT)
+    model = PeleeNet(bottleneck_width=BOTTLENECK_WIDTH, growth_rate=GROWTH_RATE, drop_rate=DROPOUT, num_classes=NUM_CLASSES)
 
     # @tf.function
     # def train_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
@@ -371,15 +395,14 @@ def main():
     tensorboard = tf.keras.callbacks.TensorBoard(log_dir=tensorboard_dir, histogram_freq=20, write_graph=True,
                                                  update_freq='batch', profile_batch=2)
 
-    lr_plateau = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.25, patience=5,
+    lr_plateau = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.25, patience=PATIENCE,
                                                       verbose=1, mode='auto', cooldown=0, min_lr=0.0001)
 
     print('Fit model...')
-    history = model.fit(cifar100_train,
+    history = model.fit(train,
                         epochs=EPOCHS,
-                        validation_data=cifar100_test,
+                        validation_data=test,
                         callbacks=[lr_plateau, checkpoint, tensorboard])
-    print(model.summary())
 
     # train_summary_writer = tf.summary.create_file_writer(train_log_dir)
     # test_summary_writer = tf.summary.create_file_writer(test_log_dir)
@@ -407,7 +430,7 @@ def main():
     #     test_loss.reset_states()
     #     test_accuracy.reset_states()
     
-    #model.save((MODEL_DIRECTORY + "/" + "PELEENET" + "-" + str(MODEL_VERSION) + '-' + str(EPOCHS)))
+    model.save((MODEL_DIRECTORY + "/" + "PELEENET" + "-" + str(MODEL_VERSION) + '-' + str(EPOCHS)))
 
     tensorboard_metadata = {
         "outputs": [{

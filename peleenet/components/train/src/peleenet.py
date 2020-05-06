@@ -1,10 +1,11 @@
 import argparse
+import datetime
 import json
 import os
 import pickle
 import shutil
+
 from collections import OrderedDict
-import datetime
 from typing import List, Tuple
 
 import numpy as np
@@ -15,11 +16,12 @@ from tensorflow.keras import Sequential, regularizers
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 from tensorflow.keras.layers import (Activation, AveragePooling2D,
                                      BatchNormalization, Concatenate, Conv2D,
-                                     Dense, Dropout, Flatten, Input, 
-                                     MaxPool2D, GlobalAveragePooling2D)
+                                     Dense, Dropout, Flatten,
+                                     GlobalAveragePooling2D, Input, MaxPool2D)
 from tensorflow.keras.models import Model
 
 import tensorflow_datasets as tfds
+
 
 class _DenseLayer(Model):
     def __init__(self, num_input_features, growth_rate, bottleneck_width, drop_rate):
@@ -176,6 +178,7 @@ def main():
     SCALE_IMG = int(args.scale_img)
     DROPOUT = float(args.dropout)
     PATIENCE = int(args.lr_patience)
+    INPUT_DIR = str(args.input_dir)
     NUM_CLASSES = int(args.num_classes)
     INPUT_SIZE = int(args.input_size)
     PREFETCH_SIZE = int(args.prefetch_size)
@@ -230,7 +233,7 @@ def main():
                                     shuffle_files=True,
                                     as_supervised=True,
                                     with_info=True,
-                                    data_dir="/mnt/datasets/tensorflow_datasets")
+                                    data_dir=INPUT_DIR)
 
     def normalize(image: tf.data.Dataset, label: tf.data.Dataset) -> tf.data.Dataset:
         """ Normalize the pixel data within the images

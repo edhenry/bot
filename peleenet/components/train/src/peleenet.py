@@ -4,13 +4,13 @@ import json
 import os
 import pickle
 import shutil
-
 from collections import OrderedDict
 from typing import List, Tuple
 
 import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
+import tensorflow_datasets as tfds
 from PIL import Image
 from tensorflow.keras import Sequential, regularizers
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
@@ -19,8 +19,6 @@ from tensorflow.keras.layers import (Activation, AveragePooling2D,
                                      Dense, Dropout, Flatten,
                                      GlobalAveragePooling2D, Input, MaxPool2D)
 from tensorflow.keras.models import Model
-
-import tensorflow_datasets as tfds
 
 
 class _DenseLayer(Model):
@@ -220,10 +218,11 @@ def main():
     # load data
 
     #TODO: Break out data loading functionality into separate module
-    # # image_net = tfds.builder("imagenet2012")
-    # download_config = tfds.download.DownloadConfig()
-    # download_config.manual_dir="/mnt/datasets/"
-    # # image_net.download_and_prepare(download_config=download_config)
+    image_net = tfds.builder("imagenet2012")
+    download_config = tfds.download.DownloadConfig()
+    download_config.manual_dir="/mnt/imagenet2012"
+    download_config.extract_dir="/mnt/"
+    image_net.download_and_prepare(download_config=download_config)
 
     # # image_net.as_dataset()
     # # image_net_train, image_net_valid = image_net['train'], image_net['valid']

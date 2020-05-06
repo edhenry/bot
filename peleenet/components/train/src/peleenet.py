@@ -221,7 +221,7 @@ def main():
     image_net = tfds.builder("imagenet2012")
     download_config = tfds.download.DownloadConfig()
     download_config.manual_dir="/mnt/imagenet2012"
-    download_config.extract_dir="/mnt/"
+    download_config.extract_dir="/mnt"
     image_net.download_and_prepare(download_config=download_config)
 
     # # image_net.as_dataset()

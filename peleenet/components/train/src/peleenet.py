@@ -290,16 +290,18 @@ def main():
     # shuffle our dataset respective of the number of training examples
 
     train = train.shuffle(SHUFFLE_BUFFER, reshuffle_each_iteration=True)
-    train = train.map(normalize)
-    train = train.map(training_augment)
+    train = train.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    train = train.map(training_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     train = train.batch(BATCH_SIZE, drop_remainder=True)
     train = train.prefetch(PREFETCH_SIZE)
+    train = train.cache()
 
     #cifar100_test = cifar100_test.cache()
-    test = test.map(normalize)
-    test = test.map(test_augment)
+    test = test.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    test = test.map(test_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     test = test.batch(BATCH_SIZE, drop_remainder=True)
     test = test.prefetch(PREFETCH_SIZE)
+    test = test.cache()
 
     print(f"Model output directory : {args.output_dir}/{args.model_name}")
 

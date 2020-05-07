@@ -220,8 +220,8 @@ def main():
     #TODO: Break out data loading functionality into separate module
     image_net = tfds.builder("imagenet2012")
     download_config = tfds.download.DownloadConfig()
-    download_config.manual_dir="/mnt/imagenet2012"
-    download_config.extract_dir="/mnt/tensorflow_datasets"
+    download_config.manual_dir="/home/tom/tensorflow_datasets"
+    #download_config.extract_dir="/mnt/tensorflow_datasets"
     download_config.compute_stats="skip"
     image_net.download_and_prepare(download_config=download_config)
 

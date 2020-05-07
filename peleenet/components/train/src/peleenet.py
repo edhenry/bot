@@ -259,7 +259,7 @@ def main():
         """
         original_img = image
         #aug_img = tf.image.per_image_standardization(original_img)
-        aug_img = tf.image.resize(aug_img, (((INPUT_SIZE * SCALE_IMG) + RESIZE), ((INPUT_SIZE * SCALE_IMG) + RESIZE)))
+        aug_img = tf.image.resize(original_img, (((INPUT_SIZE * SCALE_IMG) + RESIZE), ((INPUT_SIZE * SCALE_IMG) + RESIZE)))
         aug_img = tf.image.random_crop(aug_img, size=[224, 224, 3])
         aug_img = tf.image.resize(aug_img, (224, 224))
         aug_img = tf.image.random_flip_left_right(aug_img)

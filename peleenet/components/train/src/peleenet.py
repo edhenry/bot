@@ -419,21 +419,24 @@ def main():
     test_summary_writer = tf.summary.create_file_writer(test_log_dir)
     validation_summary_writer =tf.summary.create_file_writer(validation_log_dir)
 
+    progbar_metrics = ['train_loss', 'val_loss', 'test_loss', 
+                       'train_accuracy', 'val_accuracy', 'test_accuracy']
+
     for epoch in range(EPOCHS):
-        print(f"Starting epoch number {(epoch + 1)}...")
-        #TODO Get ProgBar working with GradientTape
-        bar = tf.keras.utils.Progbar(target=train, unit_name="step")
+        print(f"\nStarting epoch number {(epoch + 1)}...")
+        bar = tf.keras.utils.Progbar(target=info.splits['train'].num_examples//BATCH_SIZE, unit_name="step", stateful_metrics=progbar_metrics)
         for step, (images, labels) in enumerate(train):
             train_step(images, labels)
+            bar.update(step, values=[('train_loss', train_loss.result()), ('train_accuracy', train_accuracy.result())])
         with train_summary_writer.as_default():
             tf.summary.scalar('train_loss', train_loss.result(), step=epoch)
-            tf.summary.scalar('train_accuracy', train_loss.result(), step=epoch)        
+            tf.summary.scalar('train_accuracy', train_loss.result(), step=epoch)
         for step, (images, labels) in enumerate(test):
             test_step(images, labels)
         with test_summary_writer.as_default():
             tf.summary.scalar('test_loss', test_loss.result(), step=epoch)
             tf.summary.scalar('test_accuracy', test_accuracy.result(), step=epoch)
-        print(f"Epoch : {epoch+1}, \n Training Loss : {train_loss.result()}, \n Training Accuracy : {train_accuracy.result()}, \n Test Loss : {test_loss.result()}, \n Test Accuracy : {test_accuracy.result()}")
+        bar.update(info.splits['train'].num_examples//BATCH_SIZE, values=[('test_loss', test_loss.result()), ('test_accuracy', test_accuracy.result())])
         checkpoint_manager.save(checkpoint_number=None)
 
         # Reset metric states for each epoch

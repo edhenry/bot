@@ -5,6 +5,7 @@ import os
 import pickle
 import shutil
 from collections import OrderedDict
+import math
 from typing import List, Tuple
 
 import numpy as np
@@ -300,7 +301,34 @@ def main():
         """
         file_writer = tf.summary.create_file_writer()
     
-    # shuffle our dataset respective of the number of training examples
+    #TODO(ehenry): Match learning rate scheduler to peleenet paper -- for now using peicewiseconstantdecay
+    def lr_scheduler(init_lr: float, num_epochs: int, iterations_per_epoch: int, iterations: int) -> Tuple[List, List]:
+        """Scheduler for use in reducing learning rate during training as outlined in the original PeleeNet Paper
+
+        Arguments:
+            init_lr {float} -- Initial learning rate
+            num_epochs {int} -- Total number of training epochs
+            iterations_per_epoch {int} -- Total number of iterations_per_epoch (total number of training examples)
+            iterations {int} -- Total number of steps per epoch
+
+        Returns:
+            Tuple[List, List] -- [description]
+        """
+        
+        # Lists of boundaries and values for use in PiecewiseConstantDecay learning rate
+        boundaries = []
+        values = []
+
+        learning_rate = init_lr
+        T_total = num_epochs * iterations_per_epoch
+        for i in range(EPOCHS):
+            for e in range(iterations):
+                T_cur = (i % num_epochs) * iterations_per_epoch + e
+                lr = 0.5 * learning_rate * (1 + math.cos(math.pi * T_cur / T_total))
+            boundaries.append(i+1)
+            values.append(lr)
+
+        return boundaries[:-1], values
 
     # Shuffle our dataset, and reshuffle after each epoch
     train = train.shuffle(SHUFFLE_BUFFER, reshuffle_each_iteration=True)
@@ -328,6 +356,12 @@ def main():
 
     # Loss object for use in tracking model loss on train/validation/test datasets
     loss_object = tf.losses.SparseCategoricalCrossentropy(from_logits=True)
+
+    # Quick hack for using PiecewiseConstantDecay for learning rate decay
+    # Ideally we'd want to implement our own LearningRateSchedule here, but
+    # this should work for now...
+    lr_boundaries, lr_values = lr_scheduler(init_lr=LEARNING_RATE, num_epochs=EPOCHS, iterations_per_epoch=info.splits['train'].num_examples, iterations=info.splits['train'].num_examples//BATCH_SIZE)
+    lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(boundaries=lr_boundaries, values=lr_values)
 
     # Optimizer (this one is pretty straight forward)
     optimizer = tf.optimizers.SGD(learning_rate=LEARNING_RATE, momentum=MOMENTUM)
@@ -396,7 +430,7 @@ def main():
 
         # Set test dataset loss
         test_loss(t_loss)
-        
+
     #TODO(ehenry) clean up this logic for directory creation 
     if os.path.isdir(MODEL_DIRECTORY):
         os.mkdir(os.path.join(MODEL_DIRECTORY, MODEL_VERSION))
@@ -456,7 +490,8 @@ def main():
 
     # Metrics to use with progress bar for model training and testing
     progbar_metrics = ['train_loss', 'val_loss', 'test_loss', 
-                       'train_accuracy', 'val_accuracy', 'test_accuracy']
+                       'train_accuracy', 'val_accuracy', 'test_accuracy'
+                       'learning_rate']
 
     
     for epoch in range(EPOCHS):
@@ -477,7 +512,8 @@ def main():
         # Write per epoch training results to Tensorboard summary files
         with train_summary_writer.as_default():
             tf.summary.scalar('train_loss', train_loss.result(), step=epoch)
-            tf.summary.scalar('train_accuracy', train_loss.result(), step=epoch)
+            tf.summary.scalar('train_accuracy', train_accuracy.result(), step=epoch)
+            tf.summary.scalar('learning_rate', optimizer.learning_rate.numpy(), step=epoch)
 
         # Iterate over test dataset batches
         for step, (images, labels) in enumerate(test):

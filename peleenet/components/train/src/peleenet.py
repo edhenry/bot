@@ -171,6 +171,7 @@ def main():
     EPOCHS = int(args.epochs)
     LEARNING_RATE = float(args.learning_rate)
     MOMENTUM = float(args.momentum)
+    #TODO(ehenry): Make dataset augmentation optional as an argument for hyperparameter sweeps
     DATA_AUGMENTATION = args.data_augment
     RESIZE = int(args.resize)
     SCALE_IMG = int(args.scale_img)
@@ -182,6 +183,8 @@ def main():
     PREFETCH_SIZE = int(args.prefetch_size)
     SHUFFLE_BUFFER = int(args.shuffle_buffer)
     
+    #TODO(ehenry): This can likely be combined with the DATA_AUGMENTATION flag above. 
+    # It should be made optional for via command line argument for hyperparameter sweeps
     if args.crop_pct:
         CROP_PERCENT = float(args.crop_pct)
     else:
@@ -197,7 +200,7 @@ def main():
     else:
         BOTTLENECK_WIDTH = [1,2,4,4]
 
-    # TODO For data management, is there a way we can automate this process
+    # TODO(ehenry) For data management, is there a way we can automate this process
     # for users whom use our platform(s)? Something to investigate when 
     # looking into what data management means? API calls to FS served by
     # Dell EMC storage array?
@@ -217,13 +220,13 @@ def main():
 
     # load data
 
-    #TODO: Break out data loading functionality into separate module
-    image_net = tfds.builder("cifar10")
-    download_config = tfds.download.DownloadConfig()
-    download_config.manual_dir="/home/tom/tensorflow_datasets"
-    #download_config.extract_dir="/mnt/tensorflow_datasets"
-    download_config.compute_stats="skip"
-    image_net.download_and_prepare(download_config=download_config)
+    #TODO(ehenry): Break out data loading functionality into separate module
+    # image_net = tfds.builder("cifar10")
+    # download_config = tfds.download.DownloadConfig()
+    # download_config.manual_dir="/home/tom/tensorflow_datasets"
+    # #download_config.extract_dir="/mnt/tensorflow_datasets"
+    # download_config.compute_stats="skip"
+    # image_net.download_and_prepare(download_config=download_config)
 
     # # image_net.as_dataset()
     # # image_net_train, image_net_valid = image_net['train'], image_net['valid']
@@ -259,7 +262,7 @@ def main():
         """
         original_img = image
         aug_img = tf.image.per_image_standardization(original_img)
-        aug_img = tf.image.resize(original_img, (((INPUT_SIZE * SCALE_IMG) + RESIZE), ((INPUT_SIZE * SCALE_IMG) + RESIZE)))
+        aug_img = tf.image.resize(aug_img, (((INPUT_SIZE * SCALE_IMG) + RESIZE), ((INPUT_SIZE * SCALE_IMG) + RESIZE)))
         aug_img = tf.image.random_crop(aug_img, size=[224, 224, 3])
         aug_img = tf.image.resize(aug_img, (224, 224))
         aug_img = tf.image.random_flip_left_right(aug_img)
@@ -286,6 +289,7 @@ def main():
         #aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
         return aug_img, label
 
+    #TODO Write out augmented images for visual inspection within Tensorboard
     def save_images(image: tf.data.Dataset, label: tf.data.Dataset, logdir: str):
         """Method to save original and augmented images for visualization within TensorBoard
 
@@ -298,29 +302,48 @@ def main():
     
     # shuffle our dataset respective of the number of training examples
 
+    # Shuffle our dataset, and reshuffle after each epoch
     train = train.shuffle(SHUFFLE_BUFFER, reshuffle_each_iteration=True)
+
+    # Normalize our dataset
     train = train.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+    # Augment our dataset
     train = train.map(training_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+    # Create batches
     train = train.batch(BATCH_SIZE, drop_remainder=True)
+
+    # Prefetch batches for feeding training pipeline
     train = train.prefetch(PREFETCH_SIZE)
 
     test = test.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     test = test.map(test_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    #TODO Try testing model back in keras.fit again...
+    #the validation loss seems all over the place compared to training with the .fit method....
     test = test.batch(BATCH_SIZE, drop_remainder=True)
     test = test.prefetch(PREFETCH_SIZE)
 
     print(f"Model output directory : {args.output_dir}/{args.model_name}")
 
+    # Loss object for use in tracking model loss on train/validation/test datasets
     loss_object = tf.losses.SparseCategoricalCrossentropy(from_logits=True)
+
+    # Optimizer (this one is pretty straight forward)
     optimizer = tf.optimizers.SGD(learning_rate=LEARNING_RATE, momentum=MOMENTUM)
 
+    # Metrics for tracking train, validation, and test loss during training
     train_loss = tf.keras.metrics.Mean(name='train_loss')
     validation_loss = tf.keras.metrics.Mean(name='validation_loss')
     test_loss = tf.keras.metrics.Mean(name='test_loss')
 
+    # Train accuracy metric for use in model training
     train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
+
+    # Test accuracy metric for use in model training
     test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
 
+    # Create an instance of out model
     model = PeleeNet(bottleneck_width=BOTTLENECK_WIDTH, growth_rate=GROWTH_RATE, drop_rate=DROPOUT, num_classes=NUM_CLASSES)
 
     @tf.function
@@ -341,18 +364,18 @@ def main():
         train_accuracy(labels, predictions)
         train_loss(loss)
 
-    @tf.function
-    def validation_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
-        """[summary]
+    # @tf.function
+    # def validation_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
+    #     """[summary]
 
-        Arguments:
-            images {tf.data.Dataset.batch} -- Batch of validation images
-            labels {tf.data.Dataset.batch} -- Batch of validation labels
-        """
-        predictions = model(images)
-        v_loss = loss_object(labels, predictions)
+    #     Arguments:
+    #         images {tf.data.Dataset.batch} -- Batch of validation images
+    #         labels {tf.data.Dataset.batch} -- Batch of validation labels
+    #     """
+    #     predictions = model(images)
+    #     v_loss = loss_object(labels, predictions)
 
-        validation_loss(v_loss)
+    #     validation_loss(v_loss)
 
     @tf.function
     def test_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):
@@ -362,13 +385,19 @@ def main():
             images {tf.data.Dataset.batch} -- Batch of testing images
             labels {tf.data.Dataset.batch} -- Batch of testing labels
         """
-        predictions = model(images)
+        # Get model preidctions
+        predictions = model(images, training=False)
+
+        # Get test dataset loss
         t_loss = loss_object(labels, predictions)
+
+        # Set test dataset accuracy
         test_accuracy(labels, predictions)
 
+        # Set test dataset loss
         test_loss(t_loss)
         
-    #TODO clean up this logic for directory creation 
+    #TODO(ehenry) clean up this logic for directory creation 
     if os.path.isdir(MODEL_DIRECTORY):
         os.mkdir(os.path.join(MODEL_DIRECTORY, MODEL_VERSION))
     else:
@@ -382,10 +411,14 @@ def main():
     os.mkdir(checkpoint_dir)
     os.mkdir(tensorboard_dir)
 
+    # Checkpoint object for use in training pipeline
     checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
     checkpoint_path = checkpoint_dir + '/'
+
+    # Checkpoint manager for managing checkpoints during training 
     checkpoint_manager = tf.train.CheckpointManager(checkpoint, directory=checkpoint_path, max_to_keep=5)
 
+    #TODO(ehenry): Clean up this mess of logging locations on filesystem
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     train_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/train'
     test_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/test'
@@ -415,28 +448,52 @@ def main():
     #                     validation_data=test,
     #                     callbacks=[lr_plateau, checkpoint, tensorboard])
 
+    # Create summary writers for writing values for visualization in TensorBoard
+    #TODO(ehenry) Implement validation dataset logic
     train_summary_writer = tf.summary.create_file_writer(train_log_dir)
     test_summary_writer = tf.summary.create_file_writer(test_log_dir)
     validation_summary_writer =tf.summary.create_file_writer(validation_log_dir)
 
+    # Metrics to use with progress bar for model training and testing
     progbar_metrics = ['train_loss', 'val_loss', 'test_loss', 
                        'train_accuracy', 'val_accuracy', 'test_accuracy']
 
+    
     for epoch in range(EPOCHS):
         print(f"\nStarting epoch number {(epoch + 1)}...")
+
+        # Progress bar for tracking training and testing 
         bar = tf.keras.utils.Progbar(target=info.splits['train'].num_examples//BATCH_SIZE, unit_name="step", stateful_metrics=progbar_metrics)
+
+        # Iterate over training dataset batches
         for step, (images, labels) in enumerate(train):
+
+            # Evaluate BATCH_SIZE of images and take a gradient step
             train_step(images, labels)
+
+            # Update the progress bar for CLI output
             bar.update(step, values=[('train_loss', train_loss.result()), ('train_accuracy', train_accuracy.result())])
+        
+        # Write per epoch training results to Tensorboard summary files
         with train_summary_writer.as_default():
             tf.summary.scalar('train_loss', train_loss.result(), step=epoch)
             tf.summary.scalar('train_accuracy', train_loss.result(), step=epoch)
+
+        # Iterate over test dataset batches
         for step, (images, labels) in enumerate(test):
+
+            # Evaluate the model in BATCH_SIZE of images
             test_step(images, labels)
+
+        # Write per epoch training results to Tensorboard summary files    
         with test_summary_writer.as_default():
             tf.summary.scalar('test_loss', test_loss.result(), step=epoch)
             tf.summary.scalar('test_accuracy', test_accuracy.result(), step=epoch)
+        
+        # Update progres bar with results of test dataset evaluation
         bar.update(info.splits['train'].num_examples//BATCH_SIZE, values=[('test_loss', test_loss.result()), ('test_accuracy', test_accuracy.result())])
+        
+        # Checkpoint the model to disk
         checkpoint_manager.save(checkpoint_number=None)
 
         # Reset metric states for each epoch
@@ -446,8 +503,12 @@ def main():
         test_loss.reset_states()
         test_accuracy.reset_states()
     
+    #TODO(ehenry): Evaluate if this is necessary with model checkpointing...
     model.save((MODEL_DIRECTORY + "/" + "PELEENET" + "-" + str(MODEL_VERSION) + '-' + str(EPOCHS)))
 
+    #TODO(ehenry): Implement logic to write metadata files for use in Kubeflow pipelines
+    # This specific example will allow for spawning a TensorBoard instance within Kubernetes
+    # from the Kubeflow Pipelines UI
     tensorboard_metadata = {
         "outputs": [{
             "type": "tensorboard",
@@ -455,6 +516,7 @@ def main():
         }]
     }
 
+    #TODO(ehenry): Define logic for saving model metadata to the metadata module included with Kubeflow
     # with open('/mlpipeline-ui-metadata.json', 'w') as f:
     #     json.dump(tensorboard_metadata, f)
 

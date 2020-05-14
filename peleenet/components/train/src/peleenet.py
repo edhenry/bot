@@ -1,17 +1,16 @@
 import argparse
 import datetime
 import json
+import math
 import os
 import pickle
 import shutil
 from collections import OrderedDict
-import math
 from typing import List, Tuple
 
 import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
-import tensorflow_datasets as tfds
 from PIL import Image
 from tensorflow.keras import Sequential, regularizers
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
@@ -20,6 +19,8 @@ from tensorflow.keras.layers import (Activation, AveragePooling2D,
                                      Dense, Dropout, Flatten,
                                      GlobalAveragePooling2D, Input, MaxPool2D)
 from tensorflow.keras.models import Model
+
+import tensorflow_datasets as tfds
 
 
 class _DenseLayer(Model):
@@ -212,6 +213,31 @@ def main():
         BATCH_SIZE = int(args.batch_size)
     else:
         BATCH_SIZE = 128
+
+    #TODO(ehenry) clean up this logic for directory creation 
+    if os.path.isdir(MODEL_DIRECTORY):
+        os.mkdir(os.path.join(MODEL_DIRECTORY, MODEL_VERSION))
+    else:
+        pass
+
+    checkpoint_dir = os.path.join(MODEL_DIRECTORY, str(MODEL_VERSION), 'ckpt')
+    tensorboard_dir = os.path.join(MODEL_DIRECTORY, str(MODEL_VERSION), 'logs')
+    if os.path.isdir(checkpoint_dir):
+        shutil.rmtree(checkpoint_dir)
+        shutil.rmtree(tensorboard_dir)
+    os.mkdir(checkpoint_dir)
+    os.mkdir(tensorboard_dir)
+
+    #TODO(ehenry): Clean up this mess of logging locations on filesystem
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    train_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/train'
+    test_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/test'
+    print(f"Training Log Directory : {train_log_dir}")
+    print(f"Testing Log Directory : {test_log_dir}")
+    validation_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/validation'
+    os.makedirs(train_log_dir)
+    os.makedirs(test_log_dir)
+    os.makedirs(validation_log_dir)
     
     # dataset_splits = args.dataset_split
 
@@ -291,7 +317,7 @@ def main():
         return aug_img, label
 
     #TODO Write out augmented images for visual inspection within Tensorboard
-    def save_images(image: tf.data.Dataset, label: tf.data.Dataset, logdir: str):
+    def save_images(image: tf.data.Dataset, label: tf.data.Dataset):
         """Method to save original and augmented images for visualization within TensorBoard
 
         Arguments:
@@ -299,7 +325,15 @@ def main():
             label {tf.data.Dataset} -- Labels for batches of images
             logdir {str} -- Location on FileSystem to save the images
         """
-        file_writer = tf.summary.create_file_writer()
+
+        #train_aug_img, train_aug_label = training_augment(image, label)
+        image_aug, _ = training_augment(image, label)
+
+        print(image)
+        print(image_aug)
+
+        return image, image_aug, label
+
     
     #TODO(ehenry): Match learning rate scheduler to peleenet paper -- for now using peicewiseconstantdecay
     def lr_scheduler(init_lr: float, num_epochs: int, iterations_per_epoch: int, iterations: int) -> Tuple[List, List]:
@@ -329,6 +363,22 @@ def main():
             values.append(lr)
 
         return boundaries[:-1], values
+
+    # Create augmentation visualization for TensorBoard
+    viz_batch = train.take(10)
+    
+    viz_batch.map(save_images)
+
+    print(viz_batch)
+
+    viz_file_writer = tf.summary.create_file_writer(train_log_dir)
+
+    for viz_image, viz_aug_img, viz_label in viz_batch:
+        with viz_file_writer.as_default():
+                original_img = tf.reshape(viz_image, (1, 32, 32, 3))
+                train_aug_img = tf.reshape(viz_aug_img, (1, 224, 224, 3))
+                tf.summary.image(f"Original Image Label : {viz_label}", original_img, max_outputs=10, step=0)
+                tf.summary.image(f"Augmented Image Label : {viz_label}", train_aug_img, max_outputs=10, step=0)
 
     # Shuffle our dataset, and reshuffle after each epoch
     train = train.shuffle(SHUFFLE_BUFFER, reshuffle_each_iteration=True)
@@ -431,38 +481,12 @@ def main():
         # Set test dataset loss
         test_loss(t_loss)
 
-    #TODO(ehenry) clean up this logic for directory creation 
-    if os.path.isdir(MODEL_DIRECTORY):
-        os.mkdir(os.path.join(MODEL_DIRECTORY, MODEL_VERSION))
-    else:
-        pass
-
-    checkpoint_dir = os.path.join(MODEL_DIRECTORY, str(MODEL_VERSION), 'ckpt')
-    tensorboard_dir = os.path.join(MODEL_DIRECTORY, str(MODEL_VERSION), 'logs')
-    if os.path.isdir(checkpoint_dir):
-        shutil.rmtree(checkpoint_dir)
-        shutil.rmtree(tensorboard_dir)
-    os.mkdir(checkpoint_dir)
-    os.mkdir(tensorboard_dir)
-
     # Checkpoint object for use in training pipeline
     checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
     checkpoint_path = checkpoint_dir + '/'
 
     # Checkpoint manager for managing checkpoints during training 
     checkpoint_manager = tf.train.CheckpointManager(checkpoint, directory=checkpoint_path, max_to_keep=5)
-
-    #TODO(ehenry): Clean up this mess of logging locations on filesystem
-    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/train'
-    test_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/test'
-    print(f"Training Log Directory : {train_log_dir}")
-    print(f"Testing Log Directory : {test_log_dir}")
-    validation_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/validation'
-    os.makedirs(train_log_dir)
-    os.makedirs(test_log_dir)
-    os.makedirs(validation_log_dir)
-
 
     # model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=LEARNING_RATE, momentum=MOMENTUM),
     #               loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),

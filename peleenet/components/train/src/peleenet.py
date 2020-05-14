@@ -143,6 +143,69 @@ class PeleeNet(Model):
             out = Dropout(self.drop_rate)(out)
         out = self.classifier(out)
         return out
+class TrainingImageAugmentation:
+    def __init__(self, log_dir: str, max_images: int, name: str,
+                 input_size: int, scale_img: int, resize: int,
+                 batch_size: int):
+        self.file_writer = tf.summary.create_file_writer(log_dir)
+        self.max_images: int = max_images
+        self.name: str = name
+        self.input_size: int = input_size
+        self.resize: int = resize
+        self.batch_size: int = batch_size
+        self.scale_img: int = scale_img
+
+        self._counter: int = 0
+
+    def __call__(self, image, label):
+        image = tf.cast(image, tf.float32) / 255.0
+        #aug_img = tf.image.per_image_standardization(image)
+        aug_img = tf.image.resize(image, (((self.input_size * self.scale_img) + self.resize), ((self.input_size * self.scale_img) + self.resize)), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        #aug_img = tf.image.random_crop(aug_img, size=(224, 224, 3))
+        aug_img = tf.image.random_flip_left_right(aug_img)
+        #aug_img = tf.image.resize(aug_img, [224, 224], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+
+        with self.file_writer.as_default():
+            tf.summary.image(
+                self.name,
+                aug_img,
+                step=self._counter,
+                max_outputs = self.max_images
+            )
+        
+        self._counter += 1
+        return aug_img, label
+
+class TestingImageAugmentation:
+    def __init__(self, log_dir: str, max_images: int, name: str,
+                 input_size: int, scale_img: int, resize: int,
+                 batch_size: int):
+        self.file_writer = tf.summary.create_file_writer(log_dir)
+        self.max_images: int = max_images
+        self.name: str = name
+        self.input_size: int = input_size
+        self.resize: int = resize
+        self.batch_size: int = batch_size
+        self.scale_img: int = scale_img
+
+        self._counter: int = 0
+
+    def __call__(self, image, label):
+        image = tf.cast(image, tf.float32) / 255.0
+        #aug_img = tf.image.per_image_standardization(image)
+        aug_img = tf.image.resize(image, (((self.input_size * self.scale_img) + self.resize), ((self.input_size * self.scale_img) + self.resize)), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        #aug_img = tf.image.resize(aug_img, [224, 224], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+
+        with self.file_writer.as_default():
+            tf.summary.image(
+                self.name,
+                aug_img,
+                step=self._counter,
+                max_outputs = self.max_images
+            )
+        
+        self._counter += 1
+        return aug_img, label
 
 def main():
     parser = argparse.ArgumentParser(description='PeleeNet Trainer')
@@ -229,12 +292,14 @@ def main():
     os.mkdir(tensorboard_dir)
 
     #TODO(ehenry): Clean up this mess of logging locations on filesystem
-    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/train'
-    test_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/test'
+    current_time: str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    train_log_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/train'
+    train_img_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/train/images'
+    test_img_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/test/images'
+    test_log_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/test'
     print(f"Training Log Directory : {train_log_dir}")
     print(f"Testing Log Directory : {test_log_dir}")
-    validation_log_dir = tensorboard_dir + '/gradient_tape/' + current_time + '/validation'
+    validation_log_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/validation'
     os.makedirs(train_log_dir)
     os.makedirs(test_log_dir)
     os.makedirs(validation_log_dir)
@@ -265,76 +330,6 @@ def main():
                                     with_info=True,
                                     data_dir=INPUT_DIR)
 
-    def normalize(image: tf.data.Dataset, label: tf.data.Dataset) -> tf.data.Dataset:
-        """ Normalize the pixel data within the images
-        
-        Arguments:
-            image {tf.data.Dataset} -- Images contained within the TF Dataset
-            label {tf.data.Dataset} -- Labels contained within the TF Dataset
-        
-        Returns:
-            tf.dataset.Dataset -- Normalized images as TF Dataset
-        """
-        return tf.cast(image, tf.float32) / 255.0, label
-    
-    def training_augment(image: tf.data.Dataset, label: tf.data.Dataset) -> tf.data.Dataset:
-        """Training Augmentation Pipeline
-
-        Arguments:
-            image {tf.data.Dataset} -- Images contained within TF Dataset
-            label {tf.data.Dataset} -- Labels contained within TF Dataset
-
-        Returns:
-            tf.data.Dataset -- Augmented Images contained with TF Dataset
-        """
-        original_img = image
-        aug_img = tf.image.per_image_standardization(original_img)
-        aug_img = tf.image.resize(aug_img, (((INPUT_SIZE * SCALE_IMG) + RESIZE), ((INPUT_SIZE * SCALE_IMG) + RESIZE)))
-        aug_img = tf.image.random_crop(aug_img, size=[224, 224, 3])
-        aug_img = tf.image.resize(aug_img, (224, 224))
-        aug_img = tf.image.random_flip_left_right(aug_img)
-        # if CROP_PERCENT:
-        #     aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
-        # else:
-        #     pass
-        return aug_img, label
-
-    def test_augment(image: tf.data.Dataset, label: tf.data.Dataset) -> tf.data.Dataset:
-        """ Augment the datasets
-        
-        Arguments:
-            image {tf.data.Dataset} -- Images contained within the TF Dataset
-            label {tf.data.Dataset} -- Labels contained within the TF Dataset
-        
-        Returns:
-            tf.dataset.Dataset -- Augmented Images
-        """
-        original_img = image
-        aug_img = tf.image.per_image_standardization(original_img)
-        aug_img = tf.image.resize(aug_img, (((INPUT_SIZE * SCALE_IMG) + RESIZE), ((INPUT_SIZE * SCALE_IMG) + RESIZE)))
-        aug_img = tf.image.resize(aug_img, (224, 224))
-        #aug_img = tf.image.central_crop(aug_img, central_fraction=CROP_PERCENT)
-        return aug_img, label
-
-    #TODO Write out augmented images for visual inspection within Tensorboard
-    def save_images(image: tf.data.Dataset, label: tf.data.Dataset):
-        """Method to save original and augmented images for visualization within TensorBoard
-
-        Arguments:
-            image {tf.data.Dataset} -- Batch of images
-            label {tf.data.Dataset} -- Labels for batches of images
-            logdir {str} -- Location on FileSystem to save the images
-        """
-
-        #train_aug_img, train_aug_label = training_augment(image, label)
-        image_aug, _ = training_augment(image, label)
-
-        print(image)
-        print(image_aug)
-
-        return image, image_aug, label
-
-    
     #TODO(ehenry): Match learning rate scheduler to peleenet paper -- for now using peicewiseconstantdecay
     def lr_scheduler(init_lr: float, num_epochs: int, iterations_per_epoch: int, iterations: int) -> Tuple[List, List]:
         """Scheduler for use in reducing learning rate during training as outlined in the original PeleeNet Paper
@@ -353,54 +348,37 @@ def main():
         boundaries = []
         values = []
 
-        learning_rate = init_lr
-        T_total = num_epochs * iterations_per_epoch
+        learning_rate: float = init_lr
+        T_total: int = num_epochs * iterations_per_epoch
         for i in range(EPOCHS):
             for e in range(iterations):
-                T_cur = (i % num_epochs) * iterations_per_epoch + e
-                lr = 0.5 * learning_rate * (1 + math.cos(math.pi * T_cur / T_total))
+                T_cur: int = (i % num_epochs) * iterations_per_epoch + e
+                lr: float = 0.5 * learning_rate * (1 + math.cos(math.pi * T_cur / T_total))
             boundaries.append(i+1)
             values.append(lr)
 
         return boundaries[:-1], values
 
-    # Create augmentation visualization for TensorBoard
-    viz_batch = train.take(10)
+    TRAIN_AUGMENTATION = TrainingImageAugmentation(train_img_dir, max_images=5, name="Augmented Training Images", 
+                                                   input_size=INPUT_SIZE, scale_img=SCALE_IMG, resize=RESIZE,
+                                                   batch_size=BATCH_SIZE)
     
-    viz_batch.map(save_images)
-
-    print(viz_batch)
-
-    viz_file_writer = tf.summary.create_file_writer(train_log_dir)
-
-    for viz_image, viz_aug_img, viz_label in viz_batch:
-        with viz_file_writer.as_default():
-                original_img = tf.reshape(viz_image, (1, 32, 32, 3))
-                train_aug_img = tf.reshape(viz_aug_img, (1, 224, 224, 3))
-                tf.summary.image(f"Original Image Label : {viz_label}", original_img, max_outputs=10, step=0)
-                tf.summary.image(f"Augmented Image Label : {viz_label}", train_aug_img, max_outputs=10, step=0)
+    TEST_AUGMENTATION = TestingImageAugmentation(test_img_dir, max_images=5, name="Augmented Testing Images",
+                                                 input_size=INPUT_SIZE, scale_img=SCALE_IMG, resize=RESIZE,
+                                                 batch_size=BATCH_SIZE)
 
     # Shuffle our dataset, and reshuffle after each epoch
     train = train.shuffle(SHUFFLE_BUFFER, reshuffle_each_iteration=True)
 
-    # Normalize our dataset
-    train = train.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    # Create batches, augment the images, and prefetch batches
+    train = train.batch(BATCH_SIZE, drop_remainder=True).map(TRAIN_AUGMENTATION, num_parallel_calls=tf.data.experimental.AUTOTUNE).prefetch(PREFETCH_SIZE)
 
-    # Augment our dataset
-    train = train.map(training_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-    # Create batches
-    train = train.batch(BATCH_SIZE, drop_remainder=True)
-
-    # Prefetch batches for feeding training pipeline
-    train = train.prefetch(PREFETCH_SIZE)
-
-    test = test.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    test = test.map(test_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    # test = test.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    # test = test.map(test_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     #TODO Try testing model back in keras.fit again...
     #the validation loss seems all over the place compared to training with the .fit method....
-    test = test.batch(BATCH_SIZE, drop_remainder=True)
-    test = test.prefetch(PREFETCH_SIZE)
+    test = test.batch(BATCH_SIZE, drop_remainder=True).map(TEST_AUGMENTATION, num_parallel_calls=tf.data.experimental.AUTOTUNE).prefetch(PREFETCH_SIZE)
+    #test = test.prefetch(PREFETCH_SIZE)
 
     print(f"Model output directory : {args.output_dir}/{args.model_name}")
 

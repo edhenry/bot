@@ -6,29 +6,32 @@ import os
 import pickle
 import shutil
 from collections import OrderedDict
+from random import randrange
 from typing import List, Tuple
 
-import numpy as np
-import tensorflow as tf
-import tensorflow_addons as tfa
-from PIL import Image
-from tensorflow.keras import Sequential, regularizers
-from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
-from tensorflow.keras.layers import (Activation, AveragePooling2D,
-                                     BatchNormalization, Concatenate, Conv2D,
-                                     Dense, Dropout, Flatten,
-                                     GlobalAveragePooling2D, Input, MaxPool2D)
-from tensorflow.keras.models import Model
+import numpy as np  # type: ignore
+import tensorflow as tf  # type: ignore
+import tensorflow_addons as tfa  # type: ignore
+from PIL import Image  # type: ignore
+from tensorflow.keras import Sequential, regularizers  # type: ignore
+from tensorflow.keras.callbacks import (ModelCheckpoint,  # type: ignore
+                                        ReduceLROnPlateau)
+from tensorflow.keras.layers import (Activation,  # type: ignore
+                                     AveragePooling2D, BatchNormalization,
+                                     Concatenate, Conv2D, Dense, Dropout,
+                                     Flatten, GlobalAveragePooling2D, Input,
+                                     MaxPool2D)
+from tensorflow.keras.models import Model  # type: ignore
 
-import tensorflow_datasets as tfds
+import tensorflow_datasets as tfds  # type: ignore
 
 
 class _DenseLayer(Model):
     def __init__(self, num_input_features, growth_rate, bottleneck_width, drop_rate):
         super(_DenseLayer, self).__init__()
 
-        growth_rate = int(growth_rate / 2)
-        inter_channel = int(growth_rate * bottleneck_width / 4) * 4
+        growth_rate: int = int(growth_rate / 2)
+        inter_channel: int = int(growth_rate * bottleneck_width / 4) * 4
 
         if inter_channel > num_input_features / 2:
             inter_channel = int(num_input_features / 8) * 4
@@ -143,6 +146,18 @@ class PeleeNet(Model):
             out = Dropout(self.drop_rate)(out)
         out = self.classifier(out)
         return out
+
+class ImageAugmentation:
+    """
+    Resize all images in dataset to (224,224,3) as there are variable sized images in some datasets
+    """
+    def __init__(self):
+        pass
+
+    def __call__(self, image, label):
+        aug_img = tf.image.resize(image, [224, 224], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        return aug_img, label
+
 class TrainingImageAugmentation:
     def __init__(self, log_dir: str, max_images: int, name: str,
                  input_size: int, scale_img: int, resize: int,
@@ -163,7 +178,7 @@ class TrainingImageAugmentation:
         aug_img = tf.image.resize(image, (((self.input_size * self.scale_img) + self.resize), ((self.input_size * self.scale_img) + self.resize)), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
         #aug_img = tf.image.random_crop(aug_img, size=(224, 224, 3))
         aug_img = tf.image.random_flip_left_right(aug_img)
-        #aug_img = tf.image.resize(aug_img, [224, 224], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        aug_img = tf.image.resize(aug_img, [224, 224], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
 
         with self.file_writer.as_default():
             tf.summary.image(
@@ -179,7 +194,7 @@ class TrainingImageAugmentation:
 class TestingImageAugmentation:
     def __init__(self, log_dir: str, max_images: int, name: str,
                  input_size: int, scale_img: int, resize: int,
-                 batch_size: int):
+                 batch_size: int) -> None:
         self.file_writer = tf.summary.create_file_writer(log_dir)
         self.max_images: int = max_images
         self.name: str = name
@@ -190,11 +205,11 @@ class TestingImageAugmentation:
 
         self._counter: int = 0
 
-    def __call__(self, image, label):
-        image = tf.cast(image, tf.float32) / 255.0
+    def __call__(self, image: tf.data.Dataset, label: tf.data.Dataset) -> Tuple[tf.data.Dataset, tf.data.Dataset]:
+        img: tf.data.Dataset = tf.cast(image, tf.float32) / 255.0
         #aug_img = tf.image.per_image_standardization(image)
-        aug_img = tf.image.resize(image, (((self.input_size * self.scale_img) + self.resize), ((self.input_size * self.scale_img) + self.resize)), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-        #aug_img = tf.image.resize(aug_img, [224, 224], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        aug_img: tf.data.Dataset = tf.image.resize(img, (((self.input_size * self.scale_img) + self.resize), ((self.input_size * self.scale_img) + self.resize)), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        aug_img = tf.image.resize(aug_img, [224, 224], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
 
         with self.file_writer.as_default():
             tf.summary.image(
@@ -323,8 +338,8 @@ def main():
     # # image_net.as_dataset()
     # # image_net_train, image_net_valid = image_net['train'], image_net['valid']
 
-    (train, test), info = tfds.load("cifar10",
-                                    split=["train", "test"],
+    (train, test), info = tfds.load("imagenet2012",
+                                    split=["train", "validation"],
                                     shuffle_files=True,
                                     as_supervised=True,
                                     with_info=True,
@@ -341,7 +356,7 @@ def main():
             iterations {int} -- Total number of steps per epoch
 
         Returns:
-            Tuple[List, List] -- [description]
+            Tuple[List, List] -- List of boundaires and list of values for use in optimization object
         """
         
         # Lists of boundaries and values for use in PiecewiseConstantDecay learning rate
@@ -359,6 +374,8 @@ def main():
 
         return boundaries[:-1], values
 
+    BATCH_SIZE_AUGMENTATION = ImageAugmentation()
+
     TRAIN_AUGMENTATION = TrainingImageAugmentation(train_img_dir, max_images=5, name="Augmented Training Images", 
                                                    input_size=INPUT_SIZE, scale_img=SCALE_IMG, resize=RESIZE,
                                                    batch_size=BATCH_SIZE)
@@ -371,13 +388,13 @@ def main():
     train = train.shuffle(SHUFFLE_BUFFER, reshuffle_each_iteration=True)
 
     # Create batches, augment the images, and prefetch batches
-    train = train.batch(BATCH_SIZE, drop_remainder=True).map(TRAIN_AUGMENTATION, num_parallel_calls=tf.data.experimental.AUTOTUNE).prefetch(PREFETCH_SIZE)
+    train = train.map(BATCH_SIZE_AUGMENTATION, num_parallel_calls=tf.data.experimental.AUTOTUNE).batch(BATCH_SIZE, drop_remainder=True).map(TRAIN_AUGMENTATION, num_parallel_calls=tf.data.experimental.AUTOTUNE).prefetch(PREFETCH_SIZE)
 
     # test = test.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     # test = test.map(test_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     #TODO Try testing model back in keras.fit again...
     #the validation loss seems all over the place compared to training with the .fit method....
-    test = test.batch(BATCH_SIZE, drop_remainder=True).map(TEST_AUGMENTATION, num_parallel_calls=tf.data.experimental.AUTOTUNE).prefetch(PREFETCH_SIZE)
+    test = test.map(BATCH_SIZE_AUGMENTATION, num_parallel_calls=tf.data.experimental.AUTOTUNE).batch(BATCH_SIZE, drop_remainder=True).map(TEST_AUGMENTATION, num_parallel_calls=tf.data.experimental.AUTOTUNE).prefetch(PREFETCH_SIZE)
     #test = test.prefetch(PREFETCH_SIZE)
 
     print(f"Model output directory : {args.output_dir}/{args.model_name}")
@@ -407,6 +424,15 @@ def main():
 
     # Create an instance of out model
     model = PeleeNet(bottleneck_width=BOTTLENECK_WIDTH, growth_rate=GROWTH_RATE, drop_rate=DROPOUT, num_classes=NUM_CLASSES)
+
+    graph_writer = tf.summary.create_file_writer(train_log_dir)
+    tf.summary.trace_on(graph=True, profiler=True)
+    with graph_writer.as_default():
+        tf.summary.trace_export(
+            name='peleenet_trace',
+            step=0,
+            profiler_outdir=train_log_dir
+        )
 
     @tf.function
     def train_step(images: tf.data.Dataset.batch, labels: tf.data.Dataset.batch):

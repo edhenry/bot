@@ -1,6 +1,7 @@
 import datetime
 import os
 
+from typing import List
 import kfp.dsl as dsl
 from kubernetes import client as k8s_client
 
@@ -27,7 +28,9 @@ def TrainingOp(name: str, input_dir: str, output_dir: str,
                epochs: int, model_name: str, model_version: int,
                batch_size: int, learning_rate: float, momentum: float,
                resume_training: bool, resize: int, scale_img: int,
-               crop_pct: float, dataset_split: list, growth_rate: int):
+               crop_pct: float, dataset_split: list, growth_rate: int,
+               bottle_neck_width: List[int], num_classes: int, input_size: int,
+               prefetch_size: int, shuffle_buffer: int):
     """Start model training within Kubeflow pipeline
     
     Arguments:
@@ -45,6 +48,11 @@ def TrainingOp(name: str, input_dir: str, output_dir: str,
         crop_pct {float} -- Percentage to center crop training images (eg. 0.5 will center crop to the middle 50% of pixels in the image)
         dataset_split {list} -- Splits to use for Training, Validation, and Test sets (if applicable)
         growth_rate {int} -- Growth rate to use (see DenseNet and PeleeNet paper : https://arxiv.org/abs/1804.06882)
+        bottle_neck_width {List[int]} -- Bottle beck widths to use for the Dense layers
+        num_classes {int} -- Number of classes the model is being used for
+        input_size {int} -- Input size of the images used for training
+        prefetch_size {int} -- Number of batches to prefetch for training
+        shuffle_buffer {int} -- Number of examples to store in buffer for shuffling datasets too large to fit in memory
     """
     return dsl.ContainerOp(
         name=name,
@@ -63,7 +71,12 @@ def TrainingOp(name: str, input_dir: str, output_dir: str,
             '--scale_img', scale_img,
             '--crop_pct', crop_pct,
             '--dataset_split', dataset_split,
-            '--growth_rate', growth_rate 
+            '--growth_rate', growth_rate,
+            '--bottle_neck_width', bottle_neck_width,
+            '--num_classes': num_classes,
+            '--input_size': input_size,
+            '--prefetch_size': prefetch_size,
+            '--shuffle_buffer': shuffle_buffer 
         ],
         file_outputs={}
     ).set_gpu_limit(1)
@@ -88,7 +101,11 @@ def peleenet_training_pipeline(
         scale_img=7,
         crop_pct=0.5,
         dataset_split=[0.7, 0.15, 0,15],
-        growth_rate=32
+        growth_rate=32,
+        num_classes=1000,
+        input_size=32,
+        prefetch_size=2,
+        shuffle_buffer=1000
     ):
     
         persistent_volume_name = 'lts-bot-data-claim'
@@ -101,7 +118,9 @@ def peleenet_training_pipeline(
                                   epochs=epochs, model_name=model_name, model_version=model_version,
                                   batch_size=batch_size, learning_rate=learning_rate, momentum=momentum,
                                   resume_training=resume_training, resize=resize, scale_img=scale_img,
-                                  crop_pct=crop_pct, dataset_split=dataset_split, growth_rate=growth_rate)
+                                  crop_pct=crop_pct, dataset_split=dataset_split, growth_rate=growth_rate,
+                                  bottle_neck_width=bottle_neck_width, num_classes=num_classes, input_size=input_size,
+                                  prefetch_size=prefetch_size, shuffle_buffer=shuffle_buffer)
 
         # for _, container_op in op_dict.items():
         #     container_op.add_volume(k8s_client.V1Volume(persistent_volume_claim=k8s_client.V1PersistentVolumeClaimVolumeSource(claim_name=persistent_volume_name), name=persistent_volume_name)),

@@ -387,13 +387,10 @@ def main():
     # Shuffle our dataset, and reshuffle after each epoch
     train = train.shuffle(SHUFFLE_BUFFER, reshuffle_each_iteration=True)
 
-    # Create batches, augment the images, and prefetch batches
+    # Resize all images, create training batches, augment the images, and prefetch batches
     train = train.map(BATCH_SIZE_AUGMENTATION, num_parallel_calls=tf.data.experimental.AUTOTUNE).batch(BATCH_SIZE, drop_remainder=True).map(TRAIN_AUGMENTATION, num_parallel_calls=tf.data.experimental.AUTOTUNE).prefetch(PREFETCH_SIZE)
 
-    # test = test.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    # test = test.map(test_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    #TODO Try testing model back in keras.fit again...
-    #the validation loss seems all over the place compared to training with the .fit method....
+    # Resize all images, create testing batches, augment the images, and prefetch batches
     test = test.map(BATCH_SIZE_AUGMENTATION, num_parallel_calls=tf.data.experimental.AUTOTUNE).batch(BATCH_SIZE, drop_remainder=True).map(TEST_AUGMENTATION, num_parallel_calls=tf.data.experimental.AUTOTUNE).prefetch(PREFETCH_SIZE)
     #test = test.prefetch(PREFETCH_SIZE)
 

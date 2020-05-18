@@ -146,7 +146,6 @@ class PeleeNet(Model):
             out = Dropout(self.drop_rate)(out)
         out = self.classifier(out)
         return out
-
 class ImageAugmentation:
     """
     Resize all images in dataset to (224,224,3) as there are variable sized images in some datasets
@@ -338,8 +337,8 @@ def main():
     # # image_net.as_dataset()
     # # image_net_train, image_net_valid = image_net['train'], image_net['valid']
 
-    (train, test), info = tfds.load("imagenet2012",
-                                    split=["train", "validation"],
+    (train, test), info = tfds.load("cifar100",
+                                    split=["train", "train"],
                                     shuffle_files=True,
                                     as_supervised=True,
                                     with_info=True,
@@ -536,8 +535,8 @@ def main():
         
         # Write per epoch training results to Tensorboard summary files
         with train_summary_writer.as_default():
-            tf.summary.scalar('train_loss', train_loss.result(), step=epoch)
-            tf.summary.scalar('train_accuracy', train_accuracy.result(), step=epoch)
+            tf.summary.scalar('loss', train_loss.result(), step=epoch)
+            tf.summary.scalar('accuracy', train_accuracy.result(), step=epoch)
             tf.summary.scalar('learning_rate', optimizer.learning_rate.numpy(), step=epoch)
 
         # Iterate over test dataset batches
@@ -548,8 +547,8 @@ def main():
 
         # Write per epoch training results to Tensorboard summary files    
         with test_summary_writer.as_default():
-            tf.summary.scalar('test_loss', test_loss.result(), step=epoch)
-            tf.summary.scalar('test_accuracy', test_accuracy.result(), step=epoch)
+            tf.summary.scalar('loss', test_loss.result(), step=epoch)
+            tf.summary.scalar('accuracy', test_accuracy.result(), step=epoch)
         
         # Update progres bar with results of test dataset evaluation
         bar.update(info.splits['train'].num_examples//BATCH_SIZE, values=[('test_loss', test_loss.result()), ('test_accuracy', test_accuracy.result())])

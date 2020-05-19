@@ -4,7 +4,6 @@ RUN python -m pip install matplotlib
 RUN python -m pip install pandas
 RUN python -m pip install opencv-python
 RUN python -m pip install tensorflow-datasets
-RUN python -m pip install --upgrade tensorflow-addons
 RUN python -m pip install --upgrade pillow
 
 RUN apt update && apt install -y libsm6 libxext6 libxrender-dev

@@ -239,7 +239,7 @@ def main():
     parser.add_argument('--dropout', help="Percentage of dropout to add to the network (eg .5 == 50% dropout rate")
     #parser.add_argument('--dataset_split', nargs='+', type=float, help="What splits to use for partitioning data between training, validation, and test (eg. 0.7 0.15 0.15) (repsectively))")
     parser.add_argument('--growth_rate', help="Growth Rate as defined in the PeleeNet paper (eg. 32)")
-    parser.add_argument('--bottle_neck_width', nargs="+", type=int, help="Bottle Neck Width as defined in the PeleeNet paper (eg. 1 2 4 4)")
+    parser.add_argument('--bottle_neck_width', nargs="+", type=str, help="Bottle Neck Width as defined in the PeleeNet paper (eg. 1 2 4 4)")
     parser.add_argument('--num_classes', help="Number of classes contained within a dataset. (eg. 1000 for ImageNet)")
     parser.add_argument('--input_size', help="Input size of the dataset (eg. 224 for images with (224,224,3) dimensions)")
     parser.add_argument('--prefetch_size', help="Number of batches to prefetch for model training (eg. 5)")

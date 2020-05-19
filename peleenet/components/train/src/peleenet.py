@@ -11,7 +11,6 @@ from typing import List, Tuple
 
 import numpy as np  # type: ignore
 import tensorflow as tf  # type: ignore
-import tensorflow_addons as tfa  # type: ignore
 from PIL import Image  # type: ignore
 from tensorflow.keras import Sequential, regularizers  # type: ignore
 from tensorflow.keras.callbacks import (ModelCheckpoint,  # type: ignore

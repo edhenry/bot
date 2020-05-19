@@ -73,10 +73,10 @@ def TrainingOp(name: str, input_dir: str, output_dir: str,
             '--dataset_split', dataset_split,
             '--growth_rate', growth_rate,
             '--bottle_neck_width', bottle_neck_width,
-            '--num_classes': num_classes,
-            '--input_size': input_size,
-            '--prefetch_size': prefetch_size,
-            '--shuffle_buffer': shuffle_buffer 
+            '--num_classes', num_classes,
+            '--input_size', input_size,
+            '--prefetch_size', prefetch_size,
+            '--shuffle_buffer', shuffle_buffer 
         ],
         file_outputs={}
     ).set_gpu_limit(1)
@@ -87,25 +87,27 @@ def TrainingOp(name: str, input_dir: str, output_dir: str,
 )
 
 def peleenet_training_pipeline(
-        raw_data_dir='',
-        processed_data_dir='',
-        output_dir='',
-        epochs=100,
-        model_name='peleenet',
-        model_version=1,
-        batch_size=128,
-        learning_rate=0.4,
-        momentum=0.9,
-        resume_training=False,
-        resize=32,
-        scale_img=7,
-        crop_pct=0.5,
-        dataset_split=[0.7, 0.15, 0,15],
-        growth_rate=32,
-        num_classes=1000,
-        input_size=32,
-        prefetch_size=2,
-        shuffle_buffer=1000
+        raw_data_dir: str = '',
+        processed_data_dir: str = '',
+        input_dir: str = ''
+        output_dir: str = '',
+        epochs: int = 100,
+        model_name: str = 'peleenet',
+        model_version: int = 1,
+        batch_size: int = 128,
+        learning_rate: float = 0.4,
+        momentum: float = 0.9,
+        resume_training: bool = False,
+        resize: int = 32,
+        scale_img: int = 7,
+        crop_pct: float = 0.5,
+        dataset_split: List = [0.7, 0.15, 0,15],
+        growth_rate: int = 32,
+        num_classes: int = 1000,
+        input_size: int = 32,
+        prefetch_size: int = 2,
+        shuffle_buffer: int = 1000,
+        bottle_neck_width: list = [1, 2, 4, 4]
     ):
     
         persistent_volume_name = 'lts-bot-data-claim'

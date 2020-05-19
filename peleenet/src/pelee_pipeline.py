@@ -89,7 +89,7 @@ def TrainingOp(name: str, input_dir: str, output_dir: str,
 def peleenet_training_pipeline(
         raw_data_dir: str = '',
         processed_data_dir: str = '',
-        input_dir: str = ''
+        input_dir: str = '',
         output_dir: str = '',
         epochs: int = 100,
         model_name: str = 'peleenet',

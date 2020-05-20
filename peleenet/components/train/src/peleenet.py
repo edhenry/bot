@@ -571,13 +571,13 @@ def main():
     tensorboard_metadata = {
         "outputs": [{
             "type": "tensorboard",
-            "source": f"'{(tensorboard_dir + '/gradient_tape')}'",
+            "source": train_log_dir,
         }]
     }
 
     #TODO(ehenry): Define logic for saving model metadata to the metadata module included with Kubeflow
-    # with open('/mlpipeline-ui-metadata.json', 'w') as f:
-    #     json.dump(tensorboard_metadata, f)
+    with open('/mlpipeline-ui-metadata.json', 'w') as f:
+        json.dump(tensorboard_metadata, f)
 
     # with open('/output.txt', 'w') as f:
     #     f.write(args.output_dir)

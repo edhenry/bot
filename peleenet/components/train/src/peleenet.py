@@ -576,7 +576,7 @@ def main():
     }
 
     #TODO(ehenry): Define logic for saving model metadata to the metadata module included with Kubeflow
-    with open('/mlpipeline-ui-metadata.json', 'w') as f:
+    with open((train_log_dir + '/mlpipeline-ui-metadata.json'), 'w') as f:
         json.dump(tensorboard_metadata, f)
 
     # with open('/output.txt', 'w') as f:

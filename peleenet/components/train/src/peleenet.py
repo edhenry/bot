@@ -563,12 +563,12 @@ def main():
         test_accuracy.reset_states()
     
     #TODO(ehenry): Evaluate if this is necessary with model checkpointing...
-    model.save((MODEL_DIRECTORY + "/" + "PELEENET" + "-" + str(MODEL_VERSION) + '-' + str(EPOCHS)))
+    model.save((MODEL_DIRECTORY + "/" + "PELEENET" + "-" + str(MODEL_VERSION)))
 
     #TODO(ehenry): Implement logic to write metadata files for use in Kubeflow pipelines
     # This specific example will allow for spawning a TensorBoard instance within Kubernetes
     # from the Kubeflow Pipelines UI
-    tensorboard_metadata = {
+    metadata = {
         "outputs": [{
             "type": "tensorboard",
             "source": train_log_dir,
@@ -576,8 +576,8 @@ def main():
     }
 
     #TODO(ehenry): Define logic for saving model metadata to the metadata module included with Kubeflow
-    with open((train_log_dir + '/mlpipeline-ui-metadata.json'), 'w') as f:
-        json.dump(tensorboard_metadata, f)
+    with open('/mlpipeline-ui-metadata.json', 'w') as f:
+        json.dump(metadata, f)
 
     # with open('/output.txt', 'w') as f:
     #     f.write(args.output_dir)

@@ -5,11 +5,6 @@ from typing import List
 import kfp.dsl as dsl
 from kubernetes import client as k8s_client
 
-@dsl.pipeline(
-    name="PeleeNet",
-    description="Model training pipeline for PeleeNet Model."
-)
-
 def PreprocessOp(name, input_dir, output_dir):
     """Preprocessing Op for Kubeflow pipeline for CIFAR 10/100 training for PeleeNet
     
@@ -29,15 +24,36 @@ def PreprocessOp(name, input_dir, output_dir):
         file_outputs={}
     )
 
+def Volume(name: str, action: str, resource_name: str,
+                 volume_name: str, modes: str, size: str) -> dsl.VolumeOp:
 
+                 return dsl.VolumeOp(
+                     name=name,
+                     action=action,
+                     resource_name=resource_name,
+                     volume_name=volume_name,
+                     modes=modes,
+                     size=size
+                 )
+
+def CheckVolume(name: str, image: str, command: List,
+                arguments: List, pvolumes: dict) -> dsl.ContainerOp:
+
+                return dsl.ContainerOp(
+                    name=name,
+                    image=image,
+                    command=command,
+                    arguments=arguments,
+                    pvolumes=pvolumes
+                )
 
 def TrainingOp(name: str, input_dir: str, output_dir: str,
                epochs: int, model_name: str, model_version: int,
                batch_size: int, learning_rate: float, momentum: float,
                lr_patience: int, resize: int, scale_img: int, 
                dropout: int, crop_pct: float, growth_rate: int,
-               num_classes: int, input_size: int,
-               prefetch_size: int, shuffle_buffer: int):
+               num_classes: int, input_size: int, prefetch_size: int, 
+               shuffle_buffer: int, volume: str):
     """Start model training within Kubeflow pipeline
     
     Arguments:
@@ -62,23 +78,8 @@ def TrainingOp(name: str, input_dir: str, output_dir: str,
         input_size {int} -- Input size of the images used for training
         prefetch_size {int} -- Number of batches to prefetch for training
         shuffle_buffer {int} -- Number of examples to store in buffer for shuffling datasets too large to fit in memory
+        volume {str} -- Name of volume to map into container for access to data
     """
-
-    vop = dsl.VolumeOp(
-        name="volume_creation",
-        resource_name="kubeflow-test-pvc",
-        volume_name="local-datasets-pipeline",
-        modes=dsl.VOLUME_MODE_RWM,
-        size="50Gi"
-    )
-
-    check_vop = dsl.ContainerOp(
-        name='check_vop',
-        image='library/bash:4.4.23',
-        command=['sh', '-c'],
-        arguments=['ls -lah /mnt'],
-        pvolumes={'/mnt': vop.volume}
-    )
 
     return dsl.ContainerOp(
         name=name,
@@ -107,9 +108,15 @@ def TrainingOp(name: str, input_dir: str, output_dir: str,
             '--prefetch_size', prefetch_size,
             '--shuffle_buffer', shuffle_buffer 
         ],
-        pvolumes={"/mnt": vop.volume},
+        pvolumes=volume,
         file_outputs={}
     ).set_gpu_limit(1)
+
+
+@dsl.pipeline(
+    name="PeleeNet",
+    description="Model training pipeline for PeleeNet Model."
+)
 
 def peleenet_training_pipeline(
         raw_data_dir: str = '',
@@ -136,29 +143,22 @@ def peleenet_training_pipeline(
         shuffle_buffer: int = 1000,
         #bottle_neck_width: str = "1 2 4 4"
     ):
-    
-        persistent_volume_name = 'lts-bot-data-claim'
-        persistent_volume_path = '/mnt/workspace'
 
-        op_dict = {}
+        volume = Volume(name="volume_creation", action="create", resource_name="kubeflow-test-pvc", 
+                        volume_name="local-datasets-pipeline", modes=dsl.VOLUME_MODE_RWM, size="50Gi").set_display_name("Create PVC")
 
-        #op_dict['volumeop'] = K8VolumeOp('50Gi')
-        #op_dict['preprocess'] = PreprocessOp('preprocess', raw_data_dir, processed_data_dir)
-        op_dict['train'] = TrainingOp('train', input_dir=raw_data_dir, output_dir=output_dir,
-                                  epochs=epochs, model_name=model_name, model_version=model_version,
-                                  batch_size=batch_size, learning_rate=learning_rate,
-                                  momentum=momentum, lr_patience=lr_patience, dropout=dropout, 
-                                  resize=resize, scale_img=scale_img, crop_pct=crop_pct, 
-                                  growth_rate=growth_rate, num_classes=num_classes, 
-                                  input_size=input_size, prefetch_size=prefetch_size, shuffle_buffer=shuffle_buffer)
+        check_volume = CheckVolume(name="check_vop", image="library/bash:4.4.23", command=['sh', '-c'], 
+                                   arguments=['ls -lah /mnt'], pvolumes={'/mnt': volume.volume}).after(volume).set_display_name("Check Volume Exists")
 
-        # for _, container_op in op_dict.items():
-        #     container_op.add_volume(k8s_client.V1Volume(persistent_volume_claim=k8s_client.V1PersistentVolumeClaimVolumeSource(claim_name=persistent_volume_name), name=persistent_volume_name)),
+        train = TrainingOp("train", input_dir=raw_data_dir, output_dir=output_dir,
+                                      epochs=epochs, model_name=model_name, model_version=model_version,
+                                      batch_size=batch_size, learning_rate=learning_rate,
+                                      momentum=momentum, lr_patience=lr_patience, dropout=dropout, 
+                                      resize=resize, scale_img=scale_img, crop_pct=crop_pct, 
+                                      growth_rate=growth_rate, num_classes=num_classes, input_size=input_size, 
+                                      prefetch_size=prefetch_size, shuffle_buffer=shuffle_buffer, volume={"/mnt": volume.volume}).after(check_volume).set_display_name("Trainer")
 
-        #    container_op.add_volume_mount(k8s_client.V1VolumeMount(
-        #         mount_path=persistent_volume_path,
-        #         name=persistent_volume_name
-        #     ))
+        #del_vol = volume.delete().after(train).set_display_name("Delete Volume")
 
 if __name__ == '__main__':
     import kfp.compiler as compiler

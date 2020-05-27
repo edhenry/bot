@@ -260,6 +260,8 @@ def main():
     INPUT_SIZE = int(args.input_size)
     PREFETCH_SIZE = int(args.prefetch_size)
     SHUFFLE_BUFFER = int(args.shuffle_buffer)
+    OUTPUT_DIR = str(args.output_dir)
+    MODEL_NAME = str(args.model_name)
     
     #TODO(ehenry): This can likely be combined with the DATA_AUGMENTATION flag above. 
     # It should be made optional for via command line argument for hyperparameter sweeps
@@ -282,7 +284,7 @@ def main():
     # for users whom use our platform(s)? Something to investigate when 
     # looking into what data management means? API calls to FS served by
     # Dell EMC storage array?
-    MODEL_DIRECTORY = os.path.join(args.output_dir, args.model_name)
+    MODEL_DIRECTORY = os.path.join(args.output_dir, MODEL_NAME)
     MODEL_VERSION = args.model_version
 
     if args.batch_size:
@@ -292,7 +294,7 @@ def main():
 
     #TODO(ehenry) clean up this logic for directory creation 
     if os.path.isdir(MODEL_DIRECTORY):
-        os.mkdir(os.path.join(MODEL_DIRECTORY, MODEL_VERSION))
+        os.makedirs(os.path.join(MODEL_DIRECTORY, MODEL_NAME))
     else:
         pass
 

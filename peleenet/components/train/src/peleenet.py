@@ -294,7 +294,7 @@ def main():
 
     #TODO(ehenry) clean up this logic for directory creation 
     if os.path.isdir(MODEL_DIRECTORY):
-        os.makedirs(os.path.join(os.path.join(MODEL_DIRECTORY, MODEL_NAME), MODEL_VERSION))
+        os.makedirs(os.path.join(MODEL_DIRECTORY, MODEL_NAME, MODEL_VERSION))
     else:
         pass
 

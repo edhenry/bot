@@ -284,40 +284,35 @@ def main():
     # for users whom use our platform(s)? Something to investigate when 
     # looking into what data management means? API calls to FS served by
     # Dell EMC storage array?
-    MODEL_DIRECTORY = os.path.join(args.output_dir, MODEL_NAME)
     MODEL_VERSION = args.model_version
+    MODEL_DIRECTORY = os.path.join(args.output_dir, MODEL_NAME, MODEL_VERSION)
+    checkpoint_dir = os.path.join(MODEL_DIRECTORY, 'ckpt')
+    tensorboard_dir = os.path.join(MODEL_DIRECTORY, 'logs')
+    current_time: str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    train_log_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/train'
+    train_img_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/train/images'
+    test_img_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/test/images'
+    test_log_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/test'
 
     if args.batch_size:
         BATCH_SIZE = int(args.batch_size)
     else:
         BATCH_SIZE = 128
 
-    #TODO(ehenry) clean up this logic for directory creation 
-    if os.path.isdir(MODEL_DIRECTORY):
-        os.makedirs(os.path.join(MODEL_DIRECTORY, MODEL_NAME, MODEL_VERSION))
+    #TODO(ehenry) clean up this logic for directory creation
+    print(MODEL_DIRECTORY) 
+    if os.path.isdir(MODEL_DIRECTORY) == False:
+        os.makedirs(os.path.join(MODEL_DIRECTORY, MODEL_VERSION))
+        os.mkdir(checkpoint_dir)
+        os.mkdir(tensorboard_dir)
+        print(f"Training Log Directory : {train_log_dir}")
+        print(f"Testing Log Directory : {test_log_dir}")
+        validation_log_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/validation'
+        os.makedirs(train_log_dir)
+        os.makedirs(test_log_dir)
+        os.makedirs(validation_log_dir)
     else:
-        pass
-
-    checkpoint_dir = os.path.join(MODEL_DIRECTORY, str(MODEL_VERSION), 'ckpt')
-    tensorboard_dir = os.path.join(MODEL_DIRECTORY, str(MODEL_VERSION), 'logs')
-    if os.path.isdir(checkpoint_dir):
-        shutil.rmtree(checkpoint_dir)
-        shutil.rmtree(tensorboard_dir)
-    os.mkdir(checkpoint_dir)
-    os.mkdir(tensorboard_dir)
-
-    #TODO(ehenry): Clean up this mess of logging locations on filesystem
-    current_time: str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_log_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/train'
-    train_img_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/train/images'
-    test_img_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/test/images'
-    test_log_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/test'
-    print(f"Training Log Directory : {train_log_dir}")
-    print(f"Testing Log Directory : {test_log_dir}")
-    validation_log_dir: str = tensorboard_dir + '/gradient_tape/' + current_time + '/validation'
-    os.makedirs(train_log_dir)
-    os.makedirs(test_log_dir)
-    os.makedirs(validation_log_dir)
+        print(f"Model {MODEL_NAME} Version {MODEL_VERSION} already exists!")    
 
     #TODO(ehenry): Implement logic to write metadata files for use in Kubeflow pipelines
     # This specific example will allow for spawning a TensorBoard instance within Kubernetes
